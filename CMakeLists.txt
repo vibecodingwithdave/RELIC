@@ -3,6 +3,14 @@ project(Relic VERSION 0.1.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
+# Windows: link the C++ runtime statically so the plugin needs no Visual C++ redistributable installed
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# Audio Units exist only on macOS
+if(APPLE)
+    set(RELIC_FORMATS VST3 AU Standalone)
+else()
+    set(RELIC_FORMATS VST3 Standalone)
+endif()
 
 add_subdirectory(third_party/JUCE)
 
@@ -10,7 +18,7 @@ juce_add_plugin(Relic
     COMPANY_NAME "McBABE Labs"
     PLUGIN_MANUFACTURER_CODE Rfgd
     PLUGIN_CODE Rfs1
-    FORMATS VST3 AU Standalone
+    FORMATS ${RELIC_FORMATS}
     PRODUCT_NAME "Relic"
     ICON_BIG ${CMAKE_CURRENT_SOURCE_DIR}/Assets/icon/relic_icon.png
     IS_SYNTH TRUE
@@ -46,6 +54,10 @@ juce_add_binary_data(RelicAssets SOURCES
     Assets/skin/key_black_down.png
     Assets/skin/meter_segs.png
     Assets/skin/font_atlas.png)
+
+if(MSVC)
+    target_compile_options(Relic PRIVATE /utf-8 /bigobj)
+endif()
 
 target_sources(Relic PRIVATE
     Source/PluginProcessor.cpp

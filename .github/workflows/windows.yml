@@ -1,0 +1,60 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Configure
+        run: cmake -S . -B build -A x64
+
+      - name: Build the VST3 and the standalone app
+        run: cmake --build build --config Release --target Relic_VST3 Relic_Standalone --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item -Recurse build/Relic_artefacts/Release/VST3/Relic.vst3 dist/Relic.vst3
+          Copy-Item build/Relic_artefacts/Release/Standalone/Relic.exe dist/Relic.exe
+          Compress-Archive -Path dist/* -DestinationPath Relic-windows.zip
+          Get-ChildItem -Recurse dist | Select-Object -First 20 FullName, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Relic-windows
+          path: Relic-windows.zip
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The plugin-host library used by the tests cannot scan a Windows .vst3 folder, but loads the DLL inside it fine.
+      # Put the DLL where the test scripts expect the plugin (after packaging, so the zip is unaffected).
+      - name: Plugin load tests
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          pip install pedalboard numpy scipy
+          $dir = 'build/Relic_artefacts/Release/VST3'
+          Move-Item "$dir/Relic.vst3" "$dir/Relic_bundle"
+          Copy-Item "$dir/Relic_bundle/Contents/x86_64-win/Relic.vst3" "$dir/Relic.vst3"
+          $suites = 'verify','verify_arp_run','verify_mod','verify_modfx','verify_fx2','verify_fx3','verify_env','verify_osc23','verify_filter2','verify_sources','verify_batch4','verify_loopfade','verify_chop','verify_sampler'
+          $bad = 0
+          foreach ($s in $suites) {
+            Write-Host "## $s"
+            $out = & python "tools/$s.py" 2>&1
+            $code = $LASTEXITCODE
+            $out | Select-String -Pattern 'RESULT|FAIL|Traceback|Error' | ForEach-Object { Write-Host $_.Line }
+            if ($code -ne 0) { Write-Host "  (exit code $code)"; $bad++ }
+          }
+          exit $bad

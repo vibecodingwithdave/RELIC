@@ -2,7 +2,7 @@
 import subprocess, sys, os, numpy as np
 from pedalboard import load_plugin
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
-exe = '/tmp/dsp_modfx'
+exe = os.path.join(__import__('tempfile').gettempdir(), 'dsp_modfx' + ('.exe' if os.name == 'nt' else ''))
 subprocess.check_call(['clang++', '-std=c++17', '-O2', '-o', exe, os.path.join(HERE, 'dsp_modfx_test.cpp')])
 r = subprocess.run([exe], capture_output=True, text=True); print(r.stdout.strip()); ok_dsp = r.returncode == 0
 P = load_plugin(os.path.join(ROOT, 'build/Relic_artefacts/Release/VST3/Relic.vst3')); SR = 44100; rows = [ok_dsp]
