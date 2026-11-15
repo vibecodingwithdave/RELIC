@@ -5,6 +5,8 @@
 #include "PluginProcessor.h"
 #include "FontMetrics.h"
 #include "HelpText.h"
+#include <map>
+#include <tuple>
 
 namespace ui {
 
@@ -33,6 +35,32 @@ inline juce::Image iconCell (const juce::Image& sheet, int i, bool inner)
 }
 constexpr float kKnobFaceCyFrac = 0.455f;   // vertical centre of the knob's top face within its sprite
 
+// Pre-scaled copies of the large artwork. Scaling a big source image down with the high-quality filter is slow, and the window used to
+// redo it on every repaint (the displays repaint 30 times a second), which kept a CPU core busy. Each piece is now scaled once, at the exact
+// size in device pixels it is drawn at, and kept; repainting is then a cheap copy. Only for images that live for the whole session.
+inline std::map<std::tuple<const void*, int, int, int, int, int, int>, juce::Image>& scaledImageCache()
+{
+    static std::map<std::tuple<const void*, int, int, int, int, int, int>, juce::Image> cache; return cache;
+}
+inline void clearScaledImageCache() { scaledImageCache().clear(); }
+inline void drawScaledCached (juce::Graphics& g, const juce::Image& img, juce::Rectangle<int> src, juce::Rectangle<float> dst)
+{
+    if (! img.isValid() || src.isEmpty() || dst.isEmpty()) return;
+    const float sf = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const int dw = juce::jmax (1, (int) std::lround (dst.getWidth() * sf)), dh = juce::jmax (1, (int) std::lround (dst.getHeight() * sf));
+    auto& cache = scaledImageCache();
+    const auto key = std::make_tuple ((const void*) img.getPixelData(), src.getX(), src.getY(), src.getWidth(), src.getHeight(), dw, dh);
+    auto it = cache.find (key);
+    if (it == cache.end())
+    {
+        if (cache.size() > 400) cache.clear();
+        it = cache.emplace (key, img.getClippedImage (src).rescaled (dw, dh, juce::Graphics::highResamplingQuality)).first;
+    }
+    g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);      // the copy is already the right size, so this is a straight copy
+    g.drawImage (it->second, dst, juce::RectanglePlacement::stretchToFit);
+    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+}
+
 // Corners keep their size; edges and middle stretch. src is the region of img to use.
 inline void nineSlice (juce::Graphics& g, const juce::Image& img, juce::Rectangle<int> src, juce::Rectangle<int> dst, int sc, int dc)
 {
@@ -44,7 +72,7 @@ inline void nineSlice (juce::Graphics& g, const juce::Image& img, juce::Rectangl
     const int dy[4] = { dst.getY(), dst.getY() + dc, dst.getBottom() - dc, dst.getBottom() };
     for (int j = 0; j < 3; ++j)
         for (int i = 0; i < 3; ++i)
-            g.drawImage (img, dx[i], dy[j], dx[i + 1] - dx[i], dy[j + 1] - dy[j], sx[i], sy[j], sx[i + 1] - sx[i], sy[j + 1] - sy[j]);
+            drawScaledCached (g, img, { sx[i], sy[j], sx[i + 1] - sx[i], sy[j + 1] - sy[j] }, juce::Rectangle<int> (dx[i], dy[j], dx[i + 1] - dx[i], dy[j + 1] - dy[j]).toFloat());
 }
 
 
@@ -339,7 +367,14 @@ protected:
     }
     RelicProcessor& proc;
 private:
-    void timerCallback() override { repaint(); }
+    // Redraw only when something the display shows has changed. Redrawing every tick kept a CPU core busy even when nothing moved.
+    // A refresh once a second is kept as a safety net for anything the key does not cover.
+    void timerCallback() override
+    {
+        const auto k = proc.displayStateKey();
+        if (k != lastKey || ++idleTicks >= 30) { lastKey = k; idleTicks = 0; repaint(); }
+    }
+    uint64_t lastKey = 0; int idleTicks = 0;
 };
 
 class WaveDisplay : public Display
@@ -490,8 +525,9 @@ public:
                 auto r = juce::Rectangle<float> (x0 + c * (w + 4.0f), y + 1.0f, w, segH - 2.0f);
                 if (art)
                 {
-                    const int cw = sk.meterSegs.getWidth() / 4, cell = litSeg ? (i >= segs - 1 ? 2 : (i >= segs - 2 ? 1 : 0)) : 3;
-                    g.drawImage (sk.meterSegs.getClippedImage ({ cell * cw, 0, cw, sk.meterSegs.getHeight() }), r, juce::RectanglePlacement::stretchToFit);
+                    const int cell = litSeg ? (i >= segs - 1 ? 2 : (i >= segs - 2 ? 1 : 0)) : 3;
+                    if (! tiles[cell].isValid()) { const int cw = sk.meterSegs.getWidth() / 4; for (int t = 0; t < 4; ++t) tiles[t] = sk.meterSegs.getClippedImage ({ t * cw, 0, cw, sk.meterSegs.getHeight() }).createCopy(); }
+                    drawScaledCached (g, tiles[cell], tiles[cell].getBounds(), r);
                 }
                 else
                 {
@@ -502,8 +538,18 @@ public:
         }
     }
 private:
-    void timerCallback() override { repaint(); }
-    RelicProcessor& proc;
+    // The meter shows at most 6 lit segments per channel, so it only needs redrawing when that count changes.
+    void timerCallback() override
+    {
+        int lit[2]; const float lv[2] = { proc.levelL.load(), proc.levelR.load() };
+        for (int c = 0; c < 2; ++c)
+        {
+            const float f = (juce::Decibels::gainToDecibels (lv[c], -48.0f) + 48.0f) / 48.0f;
+            lit[c] = (int) std::ceil (juce::jlimit (0.0f, 1.0f, f) * 22.0f);       // 22 covers the finer fallback drawing too
+        }
+        if (lit[0] != lastLit[0] || lit[1] != lastLit[1]) { lastLit[0] = lit[0]; lastLit[1] = lit[1]; repaint(); }
+    }
+    RelicProcessor& proc; int lastLit[2] = { -1, -1 }; juce::Image tiles[4];
 };
 
 

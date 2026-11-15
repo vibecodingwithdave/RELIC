@@ -83,6 +83,8 @@ public:
     // Slice boundaries as fractions 0..1: out[0..count] (count+1 values). Used by the audio thread and the display.
     int chopSlices (const SampleData& s, double bpm, double* out) const;
     double getHostBpm() const { return hostBpm; }
+    // A number that changes whenever anything the displays draw changes (parameters, arp step, chord tile, tempo, loaded sample), so they can skip redrawing when it has not.
+    uint64_t displayStateKey() const;
 
     // ---- randomizers and undo history (message thread) ----
     void randomizeSound (bool chaos);

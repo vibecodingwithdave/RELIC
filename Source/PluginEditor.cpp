@@ -22,6 +22,7 @@ void RelicEditor::setScene (int idx)
 {
     sceneIdx = ((idx % kSceneCount) + kSceneCount) % kSceneCount;
     sceneImg = juce::ImageCache::getFromMemory (kScenes[sceneIdx].data, kScenes[sceneIdx].size);
+    ui::clearScaledImageCache();                                     // drops the old picture's scaled copy
     proc.apvts.state.setProperty ("scene", sceneIdx, nullptr);      // saved with the project
     repaint();
 }
@@ -536,7 +537,7 @@ void RelicEditor::paint (juce::Graphics& g)
     g.fillAll (stone);
     g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
     g.addTransform (juce::AffineTransform::scale (scale()));
-    if (bgImg.isValid()) g.drawImage (bgImg, 0, 0, (int) DW, (int) DH, 0, 0, bgImg.getWidth(), bgImg.getHeight());
+    if (bgImg.isValid()) ui::drawScaledCached (g, bgImg, bgImg.getBounds(), { 0.0f, 0.0f, DW, DH });
     auto frame = [&] (float x, float y, float w, float h, juce::Colour = juce::Colours::transparentBlack)
     {
         if (frameImg.isValid()) ui::nineSlice (g, frameImg, frameImg.getBounds(), { (int) x, (int) y, (int) w, (int) h }, 250, (int) juce::jmin (30.0f, w / 3, h / 3));
@@ -548,7 +549,7 @@ void RelicEditor::paint (juce::Graphics& g)
     if (logoImg.isValid())
     {
         const int lh = 108, lw = (int) (lh * (float) logoImg.getWidth() / logoImg.getHeight());
-        g.drawImage (logoImg, (int) (DW / 2) - lw / 2, -6, lw, lh, 0, 0, logoImg.getWidth(), logoImg.getHeight());
+        ui::drawScaledCached (g, logoImg, logoImg.getBounds(), { (float) ((int) (DW / 2) - lw / 2), -6.0f, (float) lw, (float) lh });
     }
     // left: scene art in its frame
     frame (112, 100, 408, 582);
@@ -558,7 +559,7 @@ void RelicEditor::paint (juce::Graphics& g)
         juce::Path clip; clip.addRoundedRectangle (124.0f, 112.0f, 384.0f, 558.0f, 6.0f); g.reduceClipRegion (clip);
         const float sc = juce::jmax (384.0f / sceneImg.getWidth(), 558.0f / sceneImg.getHeight());
         const int dw = (int) (sceneImg.getWidth() * sc), dh = (int) (sceneImg.getHeight() * sc);
-        g.drawImage (sceneImg, 124 - (int) ((dw - 384) * kScenes[sceneIdx].focusX), 112 - (dh - 558) / 2, dw, dh, 0, 0, sceneImg.getWidth(), sceneImg.getHeight());
+        ui::drawScaledCached (g, sceneImg, sceneImg.getBounds(), { (float) (124 - (int) ((dw - 384) * kScenes[sceneIdx].focusX)), (float) (112 - (dh - 558) / 2), (float) dw, (float) dh });
         // darken the bottom of the picture so CRAFT, UNDO, REDO and CHAOS read clearly over it
         g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.0f), 0.0f, 520.0f, juce::Colours::black.withAlpha (0.62f), 0.0f, 670.0f, false));
         g.fillRect (124.0f, 520.0f, 384.0f, 150.0f);
