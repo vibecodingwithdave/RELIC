@@ -1,4 +1,4 @@
-"""Verify Relic against SPEC.md acceptance numbers (headless, Pedalboard)."""
+"""Verify Relic against its acceptance numbers (headless, Pedalboard)."""
 import sys, math, numpy as np
 from pedalboard import load_plugin
 PATH = sys.argv[1] if len(sys.argv) > 1 else str(__import__('pathlib').Path(__file__).resolve().parents[1] / 'build/Relic_artefacts/Release/VST3/Relic.vst3')

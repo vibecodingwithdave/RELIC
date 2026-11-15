@@ -1,4 +1,4 @@
-"""Arp GROUPING in the plain modes: exact events (DSP harness) plus the grouped sequence heard through the built VST3. Relic's own design (see VERIFICATION.md)."""
+"""Arp GROUPING in the plain modes: exact events (DSP harness) plus the grouped sequence heard through the built VST3. Relic's own design."""
 from pathlib import Path
 import subprocess, sys, tempfile
 import numpy as np

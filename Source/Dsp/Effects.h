@@ -1,4 +1,4 @@
-// Effects, each specified from measured behavior (see SPEC.md).
+// Effects, each specified from measured behavior.
 #pragma once
 #include <vector>
 #include <cmath>

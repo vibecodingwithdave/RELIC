@@ -1,6 +1,6 @@
 # Relic: working notes for a coding agent
 
-Relic is a synth plugin (AU, VST3, Standalone) built with JUCE 8.0.4 and CMake. Author brand: "McBABE! Labs". Licensed under the GNU AGPLv3 (see LICENSE). Everything is committed in this repo (`git log` shows the history). Read `README.md` (features), `VERIFICATION.md` (what was measured and what was not) and `SPEC.md`.
+Relic is a synth plugin (AU, VST3, Standalone) built with JUCE 8.0.4 and CMake. Author brand: "McBABE! Labs". Licensed under the GNU AGPLv3 (see LICENSE). Everything is committed in this repo (`git log` shows the history). Read `README.md` for the features.
 
 ## Ground rules (set by the owner)
 - Never copy code, samples, wavetables or artwork from any other product. Relic's code is original. Matching another instrument's behaviour means measuring it and writing my own implementation.
@@ -45,7 +45,7 @@ Gotchas that cost time before:
 Behaviour measurements of reference instruments are kept in a `private/` folder next to this repository's files. It is ignored by git and not published.
 
 ## What is left
-- Arp: nothing planned is missing. GO/STOP, the rhythm lane, 2-HAND, grouping in the plain modes and Relic's own Chance/Spray are implemented (the reference's `arp_chance`/`arp_spray` have no audible effect and no UI control; see VERIFICATION.md); the lane has now been measured against a reference instrument (v1.5.1) and corrected (including ties, velocity floor, STOP hit counts and Waterfall gate curve) (see VERIFICATION.md).
+- Arp: nothing planned is missing. GO/STOP, the rhythm lane, 2-HAND, grouping in the plain modes and Relic's own Chance/Spray are implemented (the reference's `arp_chance`/`arp_spray` have no audible effect and no UI control); the lane has now been measured against a reference instrument (v1.5.1) and corrected (including ties, velocity floor, STOP hit counts and Waterfall gate curve).
 - Chords: SCALE-CUSTOM mode (own chord per degree), 8 custom shapes, Chord Split, chord banks, DYNAMIC extension.
 - Sound: physical models beyond the string and bell, a stem splitter (needs a trained model), more matrix slots (the panel fits four), mid/side filter modes.
 - Content: a factory sample library, importer mapping for arp, chord and the newer effects.
