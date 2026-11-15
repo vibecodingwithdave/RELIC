@@ -1,6 +1,6 @@
 # Relic
 
-An original polyphonic synth plugin (VST3, AU, Standalone) built with JUCE 8. A learning project: its behavior is specified from measurements of an existing product (`SPEC.md`) and checked against those measurements (`VERIFICATION.md`). It contains no code, samples, wavetables or artwork from that product.
+An original polyphonic synth plugin (VST3, AU, Standalone) built with JUCE 8.
 
 ## Status: milestone 3
 Presets: a browser (PRESETS icon or click the name bar), prev/next arrows, SAVE, INIT, and 59 original factory presets. Presets are small XML files in `~/Library/Relic/Presets/` (Factory, User, Imported). An output safety stage keeps hot presets from clipping.
