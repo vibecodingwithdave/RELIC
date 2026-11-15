@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Wash Delay Lead" author="Relic">
+  <PARAM id="waveform" value="2.0"/>
+  <PARAM id="pulse_width" value="0.4"/>
+  <PARAM id="osc_level" value="0.4"/>
+  <PARAM id="unison_voices" value="2.0"/>
+  <PARAM id="unison_detune" value="6.0"/>
+  <PARAM id="attack_ms" value="6.0"/>
+  <PARAM id="decay_ms" value="250.0"/>
+  <PARAM id="sustain" value="0.75"/>
+  <PARAM id="release_ms" value="250.0"/>
+  <PARAM id="cutoff_hz" value="4500.0"/>
+  <PARAM id="resonance" value="0.2"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_mode" value="2.0"/>
+  <PARAM id="delay_time_ms" value="420.0"/>
+  <PARAM id="delay_feedback" value="0.6"/>
+  <PARAM id="delay_mix" value="0.4"/>
+</STATE>

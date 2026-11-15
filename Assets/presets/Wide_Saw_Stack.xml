@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Wide Saw Stack" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="unison_voices" value="7.0"/>
+  <PARAM id="unison_detune" value="20.0"/>
+  <PARAM id="unison_spread" value="1.0"/>
+  <PARAM id="attack_ms" value="4.0"/>
+  <PARAM id="decay_ms" value="400.0"/>
+  <PARAM id="sustain" value="0.75"/>
+  <PARAM id="release_ms" value="300.0"/>
+  <PARAM id="cutoff_hz" value="9000.0"/>
+  <PARAM id="resonance" value="0.15"/>
+  <PARAM id="comp_on" value="1.0"/>
+  <PARAM id="comp_threshold_db" value="-14.0"/>
+  <PARAM id="comp_ratio" value="3.0"/>
+</STATE>

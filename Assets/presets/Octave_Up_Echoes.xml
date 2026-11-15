@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Octave Up Echoes" author="Relic">
+  <PARAM id="waveform" value="4.0"/>
+  <PARAM id="pulse_width" value="0.4"/>
+  <PARAM id="osc_level" value="0.5"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="300.0"/>
+  <PARAM id="sustain" value="0.0"/>
+  <PARAM id="release_ms" value="300.0"/>
+  <PARAM id="cutoff_hz" value="7000.0"/>
+  <PARAM id="pdelay_on" value="1.0"/>
+  <PARAM id="pdelay_time_ms" value="375.0"/>
+  <PARAM id="pdelay_feedback" value="0.5"/>
+  <PARAM id="pdelay_semi" value="12.0"/>
+  <PARAM id="pdelay_mix" value="0.35"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.6"/>
+  <PARAM id="reverb_mix" value="0.25"/>
+</STATE>

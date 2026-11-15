@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Sub Bass" author="Relic">
+  <PARAM id="waveform" value="0.0"/>
+  <PARAM id="voices" value="1.0"/>
+  <PARAM id="attack_ms" value="3.0"/>
+  <PARAM id="decay_ms" value="200.0"/>
+  <PARAM id="sustain" value="0.9"/>
+  <PARAM id="release_ms" value="120.0"/>
+  <PARAM id="cutoff_hz" value="900.0"/>
+  <PARAM id="resonance" value="0.0"/>
+  <PARAM id="comp_on" value="1.0"/>
+  <PARAM id="comp_threshold_db" value="-20.0"/>
+  <PARAM id="comp_ratio" value="3.0"/>
+  <PARAM id="osc_level" value="0.8"/>
+</STATE>

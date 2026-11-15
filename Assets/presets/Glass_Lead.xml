@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Glass Lead" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="unison_voices" value="3.0"/>
+  <PARAM id="unison_detune" value="9.0"/>
+  <PARAM id="unison_spread" value="0.6"/>
+  <PARAM id="attack_ms" value="8.0"/>
+  <PARAM id="decay_ms" value="300.0"/>
+  <PARAM id="sustain" value="0.7"/>
+  <PARAM id="release_ms" value="350.0"/>
+  <PARAM id="cutoff_hz" value="5200.0"/>
+  <PARAM id="resonance" value="0.22"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="375.0"/>
+  <PARAM id="delay_feedback" value="0.38"/>
+  <PARAM id="delay_mix" value="0.25"/>
+  <PARAM id="delay_pingpong" value="1.0"/>
+</STATE>

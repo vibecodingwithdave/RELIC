@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Warm Pad" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="unison_voices" value="5.0"/>
+  <PARAM id="unison_detune" value="18.0"/>
+  <PARAM id="unison_spread" value="0.85"/>
+  <PARAM id="attack_ms" value="900.0"/>
+  <PARAM id="decay_ms" value="600.0"/>
+  <PARAM id="sustain" value="0.85"/>
+  <PARAM id="release_ms" value="1400.0"/>
+  <PARAM id="cutoff_hz" value="1600.0"/>
+  <PARAM id="resonance" value="0.12"/>
+  <PARAM id="comp_on" value="1.0"/>
+  <PARAM id="comp_threshold_db" value="-18.0"/>
+  <PARAM id="comp_ratio" value="2.5"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="500.0"/>
+  <PARAM id="delay_feedback" value="0.45"/>
+  <PARAM id="delay_mix" value="0.22"/>
+</STATE>

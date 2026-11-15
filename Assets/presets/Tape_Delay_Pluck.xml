@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Tape Delay Pluck" author="Relic">
+  <PARAM id="master" value="1.1"/>
+  <PARAM id="waveform" value="5.0"/>
+  <PARAM id="pulse_width" value="0.6"/>
+  <PARAM id="osc_level" value="0.5"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="300.0"/>
+  <PARAM id="sustain" value="1.0"/>
+  <PARAM id="release_ms" value="700.0"/>
+  <PARAM id="cutoff_hz" value="8000.0"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_mode" value="1.0"/>
+  <PARAM id="delay_time_ms" value="375.0"/>
+  <PARAM id="delay_feedback" value="0.5"/>
+  <PARAM id="delay_mix" value="0.35"/>
+  <PARAM id="tape_on" value="1.0"/>
+  <PARAM id="tape_drive" value="0.35"/>
+  <PARAM id="tape_tone" value="0.6"/>
+  <PARAM id="tape_wobble" value="0.15"/>
+</STATE>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="OBX Brass" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="osc_level" value="0.33"/>
+  <PARAM id="unison_voices" value="3.0"/>
+  <PARAM id="unison_detune" value="9.0"/>
+  <PARAM id="unison_spread" value="0.6"/>
+  <PARAM id="attack_ms" value="40.0"/>
+  <PARAM id="decay_ms" value="300.0"/>
+  <PARAM id="sustain" value="0.8"/>
+  <PARAM id="release_ms" value="250.0"/>
+  <PARAM id="cutoff_hz" value="1200.0"/>
+  <PARAM id="resonance" value="0.2"/>
+  <PARAM id="filter_model" value="1.0"/>
+  <PARAM id="menv1_attack_ms" value="70.0"/>
+  <PARAM id="menv1_decay_ms" value="500.0"/>
+  <PARAM id="menv1_sustain" value="0.4"/>
+  <PARAM id="mod1_src" value="5.0"/>
+  <PARAM id="mod1_dst" value="1.0"/>
+  <PARAM id="mod1_amt" value="0.45"/>
+</STATE>

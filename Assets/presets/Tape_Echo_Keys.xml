@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Tape Echo Keys" author="Relic">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="attack_ms" value="3.0"/>
+  <PARAM id="decay_ms" value="600.0"/>
+  <PARAM id="sustain" value="0.4"/>
+  <PARAM id="release_ms" value="500.0"/>
+  <PARAM id="cutoff_hz" value="4500.0"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="420.0"/>
+  <PARAM id="delay_feedback" value="0.55"/>
+  <PARAM id="delay_mix" value="0.45"/>
+  <PARAM id="delay_pingpong" value="0.0"/>
+</STATE>

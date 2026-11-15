@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Vibrato Lead" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="unison_voices" value="2.0"/>
+  <PARAM id="unison_detune" value="7.0"/>
+  <PARAM id="unison_spread" value="0.5"/>
+  <PARAM id="attack_ms" value="10.0"/>
+  <PARAM id="decay_ms" value="300.0"/>
+  <PARAM id="sustain" value="0.75"/>
+  <PARAM id="release_ms" value="300.0"/>
+  <PARAM id="cutoff_hz" value="4500.0"/>
+  <PARAM id="resonance" value="0.2"/>
+  <PARAM id="vib_on" value="1.0"/>
+  <PARAM id="vib_rate_hz" value="5.5"/>
+  <PARAM id="vib_depth_ct" value="22.0"/>
+  <PARAM id="mod1_src" value="4.0"/>
+  <PARAM id="mod1_dst" value="3.0"/>
+  <PARAM id="mod1_amt" value="0.04"/>
+</STATE>

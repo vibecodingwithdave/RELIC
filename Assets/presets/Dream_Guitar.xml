@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Dream Guitar" author="Relic">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="attack_ms" value="2.0"/>
+  <PARAM id="decay_ms" value="700.0"/>
+  <PARAM id="sustain" value="0.2"/>
+  <PARAM id="release_ms" value="500.0"/>
+  <PARAM id="cutoff_hz" value="3800.0"/>
+  <PARAM id="chorus_on" value="1.0"/>
+  <PARAM id="chorus_rate_hz" value="0.5"/>
+  <PARAM id="chorus_depth" value="0.7"/>
+  <PARAM id="chorus_mix" value="0.45"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="420.0"/>
+  <PARAM id="delay_feedback" value="0.4"/>
+  <PARAM id="delay_mix" value="0.3"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.55"/>
+  <PARAM id="reverb_mix" value="0.3"/>
+</STATE>

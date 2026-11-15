@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="MPC Chop Bass" author="Relic">
+  <PARAM id="master" value="1.1"/>
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="osc_level" value="0.6"/>
+  <PARAM id="voices" value="1.0"/>
+  <PARAM id="attack_ms" value="2.0"/>
+  <PARAM id="decay_ms" value="200.0"/>
+  <PARAM id="sustain" value="0.7"/>
+  <PARAM id="release_ms" value="90.0"/>
+  <PARAM id="cutoff_hz" value="1100.0"/>
+  <PARAM id="resonance" value="0.25"/>
+  <PARAM id="filter_model" value="3.0"/>
+  <PARAM id="comp_on" value="1.0"/>
+  <PARAM id="comp_threshold_db" value="-18.0"/>
+  <PARAM id="comp_ratio" value="3.0"/>
+</STATE>

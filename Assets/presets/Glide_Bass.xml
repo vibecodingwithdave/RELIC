@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Glide Bass" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="voices" value="1.0"/>
+  <PARAM id="attack_ms" value="3.0"/>
+  <PARAM id="decay_ms" value="250.0"/>
+  <PARAM id="sustain" value="0.8"/>
+  <PARAM id="release_ms" value="150.0"/>
+  <PARAM id="cutoff_hz" value="1200.0"/>
+  <PARAM id="resonance" value="0.3"/>
+  <PARAM id="porta_on" value="1.0"/>
+  <PARAM id="porta_ms" value="160.0"/>
+  <PARAM id="mod1_src" value="3.0"/>
+  <PARAM id="mod1_dst" value="1.0"/>
+  <PARAM id="mod1_amt" value="0.4"/>
+</STATE>

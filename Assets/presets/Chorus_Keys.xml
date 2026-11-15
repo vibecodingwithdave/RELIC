@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Chorus Keys" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="unison_voices" value="2.0"/>
+  <PARAM id="unison_detune" value="6.0"/>
+  <PARAM id="attack_ms" value="4.0"/>
+  <PARAM id="decay_ms" value="500.0"/>
+  <PARAM id="sustain" value="0.5"/>
+  <PARAM id="release_ms" value="350.0"/>
+  <PARAM id="cutoff_hz" value="4800.0"/>
+  <PARAM id="resonance" value="0.1"/>
+  <PARAM id="chorus_on" value="1.0"/>
+  <PARAM id="chorus_rate_hz" value="0.7"/>
+  <PARAM id="chorus_depth" value="0.6"/>
+  <PARAM id="chorus_mix" value="0.5"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.35"/>
+  <PARAM id="reverb_mix" value="0.18"/>
+</STATE>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Wobble Bass" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="voices" value="1.0"/>
+  <PARAM id="attack_ms" value="2.0"/>
+  <PARAM id="decay_ms" value="150.0"/>
+  <PARAM id="sustain" value="0.8"/>
+  <PARAM id="release_ms" value="100.0"/>
+  <PARAM id="cutoff_hz" value="500.0"/>
+  <PARAM id="resonance" value="0.55"/>
+  <PARAM id="trem_on" value="1.0"/>
+  <PARAM id="trem_rate_hz" value="4.0"/>
+  <PARAM id="trem_depth" value="0.75"/>
+  <PARAM id="comp_on" value="1.0"/>
+  <PARAM id="comp_threshold_db" value="-16.0"/>
+  <PARAM id="comp_ratio" value="4.0"/>
+</STATE>

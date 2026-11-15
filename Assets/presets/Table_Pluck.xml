@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Table Pluck" author="Relic">
+  <PARAM id="waveform" value="4.0"/>
+  <PARAM id="pulse_width" value="0.4"/>
+  <PARAM id="osc_level" value="0.5"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="380.0"/>
+  <PARAM id="sustain" value="0.0"/>
+  <PARAM id="release_ms" value="300.0"/>
+  <PARAM id="cutoff_hz" value="7000.0"/>
+  <PARAM id="resonance" value="0.12"/>
+  <PARAM id="menv1_attack_ms" value="1.0"/>
+  <PARAM id="menv1_decay_ms" value="320.0"/>
+  <PARAM id="menv1_sustain" value="0.0"/>
+  <PARAM id="mod1_src" value="5.0"/>
+  <PARAM id="mod1_dst" value="5.0"/>
+  <PARAM id="mod1_amt" value="0.6"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="375.0"/>
+  <PARAM id="delay_feedback" value="0.35"/>
+  <PARAM id="delay_mix" value="0.2"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.4"/>
+  <PARAM id="reverb_mix" value="0.18"/>
+</STATE>

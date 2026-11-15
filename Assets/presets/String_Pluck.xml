@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="String Pluck" author="Relic">
+  <PARAM id="waveform" value="5.0"/>
+  <PARAM id="pulse_width" value="0.7"/>
+  <PARAM id="osc_level" value="0.5"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="300.0"/>
+  <PARAM id="sustain" value="1.0"/>
+  <PARAM id="release_ms" value="900.0"/>
+  <PARAM id="cutoff_hz" value="9000.0"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.5"/>
+  <PARAM id="reverb_mix" value="0.22"/>
+  <PARAM id="chorus_on" value="1.0"/>
+  <PARAM id="chorus_rate_hz" value="0.5"/>
+  <PARAM id="chorus_depth" value="0.4"/>
+  <PARAM id="chorus_mix" value="0.2"/>
+</STATE>

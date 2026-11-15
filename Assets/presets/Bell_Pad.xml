@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Bell Pad" author="Relic">
+  <PARAM id="waveform" value="6.0"/>
+  <PARAM id="pulse_width" value="0.85"/>
+  <PARAM id="osc_level" value="0.4"/>
+  <PARAM id="osc2_on" value="1.0"/>
+  <PARAM id="osc2_wave" value="0.0"/>
+  <PARAM id="osc2_oct" value="-1.0"/>
+  <PARAM id="osc2_semi" value="0.0"/>
+  <PARAM id="osc2_fine" value="3.0"/>
+  <PARAM id="osc2_level" value="0.7"/>
+  <PARAM id="attack_ms" value="250.0"/>
+  <PARAM id="decay_ms" value="600.0"/>
+  <PARAM id="sustain" value="1.0"/>
+  <PARAM id="release_ms" value="2000.0"/>
+  <PARAM id="cutoff_hz" value="8000.0"/>
+  <PARAM id="chorus_on" value="1.0"/>
+  <PARAM id="chorus_mix" value="0.3"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.85"/>
+  <PARAM id="reverb_mix" value="0.4"/>
+</STATE>

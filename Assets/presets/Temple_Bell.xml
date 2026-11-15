@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Temple Bell" author="Relic">
+  <PARAM id="waveform" value="6.0"/>
+  <PARAM id="pulse_width" value="0.7"/>
+  <PARAM id="osc_level" value="0.5"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="300.0"/>
+  <PARAM id="sustain" value="1.0"/>
+  <PARAM id="release_ms" value="1500.0"/>
+  <PARAM id="cutoff_hz" value="12000.0"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.75"/>
+  <PARAM id="reverb_damp" value="0.5"/>
+  <PARAM id="reverb_mix" value="0.35"/>
+</STATE>

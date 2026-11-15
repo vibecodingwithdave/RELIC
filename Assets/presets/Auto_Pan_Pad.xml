@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Auto Pan Pad" author="Relic">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="unison_voices" value="5.0"/>
+  <PARAM id="unison_detune" value="12.0"/>
+  <PARAM id="unison_spread" value="0.7"/>
+  <PARAM id="attack_ms" value="700.0"/>
+  <PARAM id="decay_ms" value="500.0"/>
+  <PARAM id="sustain" value="0.9"/>
+  <PARAM id="release_ms" value="1200.0"/>
+  <PARAM id="cutoff_hz" value="2400.0"/>
+  <PARAM id="resonance" value="0.1"/>
+  <PARAM id="pan_on" value="1.0"/>
+  <PARAM id="pan_rate_hz" value="0.35"/>
+  <PARAM id="pan_depth" value="0.8"/>
+</STATE>

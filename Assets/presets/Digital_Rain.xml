@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Digital Rain" author="Relic">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="250.0"/>
+  <PARAM id="sustain" value="0.0"/>
+  <PARAM id="release_ms" value="350.0"/>
+  <PARAM id="cutoff_hz" value="9000.0"/>
+  <PARAM id="crush_on" value="1.0"/>
+  <PARAM id="crush_bits" value="8.0"/>
+  <PARAM id="crush_downsample" value="4.0"/>
+  <PARAM id="crush_mix" value="0.5"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="250.0"/>
+  <PARAM id="delay_feedback" value="0.55"/>
+  <PARAM id="delay_mix" value="0.4"/>
+  <PARAM id="delay_pingpong" value="1.0"/>
+</STATE>

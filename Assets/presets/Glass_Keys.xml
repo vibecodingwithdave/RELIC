@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Glass Keys" author="Relic">
+  <PARAM id="waveform" value="4.0"/>
+  <PARAM id="pulse_width" value="0.95"/>
+  <PARAM id="osc_level" value="0.7"/>
+  <PARAM id="osc2_on" value="1.0"/>
+  <PARAM id="osc2_wave" value="3.0"/>
+  <PARAM id="osc2_oct" value="1.0"/>
+  <PARAM id="osc2_semi" value="0.0"/>
+  <PARAM id="osc2_fine" value="4.0"/>
+  <PARAM id="osc2_level" value="0.35"/>
+  <PARAM id="attack_ms" value="3.0"/>
+  <PARAM id="decay_ms" value="700.0"/>
+  <PARAM id="sustain" value="0.3"/>
+  <PARAM id="release_ms" value="500.0"/>
+  <PARAM id="cutoff_hz" value="6500.0"/>
+  <PARAM id="chorus_on" value="1.0"/>
+  <PARAM id="chorus_rate_hz" value="0.6"/>
+  <PARAM id="chorus_depth" value="0.5"/>
+  <PARAM id="chorus_mix" value="0.3"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.5"/>
+  <PARAM id="reverb_mix" value="0.22"/>
+</STATE>

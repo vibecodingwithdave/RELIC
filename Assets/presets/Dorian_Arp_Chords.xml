@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Dorian Arp Chords" author="Relic">
+  <PARAM id="waveform" value="2.0"/>
+  <PARAM id="pulse_width" value="0.4"/>
+  <PARAM id="attack_ms" value="2.0"/>
+  <PARAM id="decay_ms" value="200.0"/>
+  <PARAM id="sustain" value="0.25"/>
+  <PARAM id="release_ms" value="180.0"/>
+  <PARAM id="cutoff_hz" value="4200.0"/>
+  <PARAM id="resonance" value="0.2"/>
+  <PARAM id="chord_on" value="1.0"/>
+  <PARAM id="chord_key" value="2.0"/>
+  <PARAM id="chord_scale" value="2.0"/>
+  <PARAM id="chord_type" value="0.0"/>
+  <PARAM id="arp_on" value="1.0"/>
+  <PARAM id="arp_div" value="10.0"/>
+  <PARAM id="arp_mode" value="0.0"/>
+  <PARAM id="arp_octaves" value="2.0"/>
+  <PARAM id="arp_gate" value="0.5"/>
+</STATE>

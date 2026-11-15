@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Wah Lead" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="voices" value="4.0"/>
+  <PARAM id="attack_ms" value="4.0"/>
+  <PARAM id="decay_ms" value="300.0"/>
+  <PARAM id="sustain" value="0.8"/>
+  <PARAM id="release_ms" value="200.0"/>
+  <PARAM id="cutoff_hz" value="9000.0"/>
+  <PARAM id="wah_on" value="1.0"/>
+  <PARAM id="wah_mode" value="1.0"/>
+  <PARAM id="wah_depth" value="0.9"/>
+  <PARAM id="wah_reso" value="0.55"/>
+  <PARAM id="wah_mix" value="1.0"/>
+  <PARAM id="lead_on" value="1.0"/>
+  <PARAM id="porta_on" value="1.0"/>
+  <PARAM id="porta_ms" value="80.0"/>
+</STATE>

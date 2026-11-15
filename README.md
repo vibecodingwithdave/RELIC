@@ -1,0 +1,89 @@
+# Relic
+
+An original polyphonic synth plugin (VST3, AU, Standalone) built with JUCE 8. A learning project: its behavior is specified from measurements of an existing product (`SPEC.md`) and checked against those measurements (`VERIFICATION.md`). It contains no code, samples, wavetables or artwork from that product.
+
+## Status: milestone 3
+Presets: a browser (PRESETS icon or click the name bar), prev/next arrows, SAVE, INIT, and 59 original factory presets. Presets are small XML files in `~/Library/Relic/Presets/` (Factory, User, Imported). An output safety stage keeps hot presets from clipping.
+
+CRAFT, CHAOS, UNDO, REDO, LOCK FX: CRAFT picks a sound style (pad, pluck, lead, bass or keys) and builds a coherent patch for it: matching envelope and filter, consonant extra oscillators (unison, octaves, a fifth, gently detuned), a clean modulation matrix with at most one slow gentle movement, and one or two of reverb, chorus, delay (in time with the host tempo) or tape. It never switches on crusher, lo-fi, OTT, talk box, spectral gate, pitch delay or wah, and it levels each style so chords stay clear of the limiter. CHAOS rolls everything wider, including the mod matrix, but avoids silent corners. Both keep master, voice count, the sample, chops, chords, arp, lead, glide and vibrato. LOCK FX leaves every effect alone when you roll. UNDO and REDO step through up to 100 recorded states (an edit counts once you stop moving a control for about a fifth of a second); loading a sample is not part of the history.
+
+FX 4 tab: talk box (vowel A to U morph, optional LFO sweep), spectral gate (turns down quiet frequencies per bin; adds about 23 ms of delay), pitch delay (each echo shifts by a set interval). The delay on the FX tab has a mode button: Clean, Tape (dark, saturating, wobbling repeats) or Wash (repeats smear). ALL ON never switches on the three creative effects; BYPASS FX switches them off.
+
+Filter: click the filter display to change the model (Clean, OBX, SP-12, MPC60; these are my own approximations of their character); shift-click to choose what it filters (all, synth only, sample only). LFO KEY SYNC on the MOD tab restarts an LFO when a note starts from silence.
+
+Sources: the Wavetable waveform (eight original tables, the Width knob is the position, and the matrix Pulse Width target moves it), Pluck (Karplus-Strong string, Width is brightness) and Bell (six inharmonic partials, Width is ring time) on oscillator 1; oscillators 2 and 3 get Wavetable too. LOAD B loads a second sample, the A/B slider morphs between the two. The TEXTURE tab (Textures icon in the sidebar) plays a cloud of grains from the loaded sample, independent of the Synth/Sample mix; level 0 is off.
+
+XY pad and macros: double-click the picture to open the XY pad and two macro knobs; they appear in the matrix as sources XY X, XY Y, Macro 1 and Macro 2. Double-click the pad to close it. SPLIT: below the split note plays the sample only, from the split note up plays the synth only; right-click SPLIT to choose the note. EFFECTS A / B stores two sets of effect settings and switches between them (not saved with the project). Sidebar: Chords opens the Chords tab, One-shots lists audio in ~/Library/Relic/Samples, History offers undo and redo, Expand makes the window larger.
+
+Factory presets: 59 now. The 26 newest show off the newer parts: wavetable (Wavetable Drift, Table Pluck, Glass Keys, Reed Lead, XY Morph Pad, Octave Up Echoes), the string and bell models (String Pluck, Nylon Dream, Harp Arp, Tape Delay Pluck, Temple Bell, Glass Chime, Bell Pad), extra oscillators (Fifth Stack, Sub Layer Bass, Octave Lead), talk box (Vowel Pad, Talking Bass), pitch delay (Pitch Echo Keys, Octave Up Echoes, Glass Chime), spectral gate (Spectral Sparkle), delay modes (Wash Delay Lead, Tape Delay Pluck, Nylon Dream), filter models (SP-12 Keys, MPC Chop Bass, OBX Brass, Sub Layer Bass) and mod sources (Env Filter Pluck, OBX Brass, Macro Sweep, XY Morph Pad). None needs a sample. Slot B and the texture layer have no preset because they need your own samples.
+
+Modulation envelopes: the ENV tab has two ADSR envelopes (attack, decay, sustain, release) that run per note. In the MOD tab pick Env 1 or Env 2 as a matrix source and send it to cutoff, resonance, pitch, level or pulse width; a negative amount inverts it. Defaults are a quick pluck shape (decay 500 ms, sustain 0), so a filter sweep per note is one matrix row away.
+
+Oscillators 2 and 3: the OSC 2 tab holds two extra oscillators, each with its own ON switch, wave (sine, saw, square, triangle, wavetable), level (relative to the main oscillator level, which is the master for all three), octave, semitone and fine tune (plus or minus 50 cents). They are single voices that follow the keyboard, envelope, filter, effects and modulation like oscillator 1; unison applies to oscillator 1 only. Off by default, so existing presets sound the same.
+
+Loop fade: the Loop fade stepper on the SAMPLER tab (off, 5 to 500 ms) blends the end of the loop into its start so the loop point doesn't click; it also applies to looped chop slices. Keyboard + and -: shift the on-screen keyboard by octaves (3 down, 4 up).
+
+Chops: the CHOP button on the SAMPLER tab turns the loaded sample into up to 16 pads on C1 to D#2 (MIDI 36 to 51). Slice by Even (equal parts), Onset (the strongest hits found in the sample) or Grid (1/4 to 1/32 of the host tempo). Each pad plays its slice once, or loops it with LOOP, reversed with REVERSE, transposed by Pitch (plus or minus 12). Releasing the key cuts the slice with the release time. Notes above D#2 still play the sample pitched. Turn CHORD off when chopping, since the chord engine would change which pad you hit.
+
+Chords and arp: the CHORDS tab turns each key into a chord from a key and scale (triad, sus2, sus4, 7th, 9th, add9, power; inversion; close, open, drop 2, spread voicing; scale lock; strum). Chord types now also include 11th and 13th (stacked in thirds from the scale, so D in C major gives D F A C E G B). Mode Fixed plays one of 24 chord shapes (MAJ, MIN, MAJ7, MIN7, DOM7, MAJ9, MIN9, DOM9, MAJ11, MIN11, MAJ13, SUS2, SUS4, ADD9, 6, MIN6, DIM, DIM7, AUG, 9SUS4, 13SUS4, 7#5, 7#5#9, 7b9) transposed under every key, ignoring the scale. VOICE LEAD makes each chord take the inversion and octave that moves the notes least from the last chord, keeping the lowest note no more than 3 semitones under the key you pressed; toggle it off and on (or change key, scale or mode) to start a progression over. The ARP tab steps through the held notes. Pattern: up, down, up-down, down-up, random, played, chord and Waterfall. Order (how the held notes are laid out first): pitch, as played, converge (outside in), diverge (inside out) or random (reshuffled every cycle). Rate: 14 divisions from 1/1 to 1/32 with dotted and triplet versions. Range 1 to 4 octaves. Gate (at 100% the notes tie together), Swing (1.0 pushes every other step half a step late), Human (timing scatter of about 4 ms at 0.5 and 8 ms at 1.0, a little level give, and from 0.6 up occasional ghost notes), Hold. Waterfall plays 4 steps up the notes and then the next 4 up-positions backwards (C E G gives C E G C, E C G E, repeating); Wave shape picks Cascade, Spiral, Geyser, Twin, Tide or Climb; Grouping (5-5-6, 7-7-2, 3-3-3-3-4, 4-4-4-4) restarts the phrase in each group and locks the step to 1/16. The first step waits 25 ms so a chord played together is all heard. Chords and arp run together: chords first, then the arp. The CHORD and ARP buttons by the keyboard switch them on. The arp behaviour matches measurements of the reference's own arpeggiator; Relic's code is my own.
+
+Effects: tremolo, delay (ping-pong), compressor, bitcrusher, auto-panner, plus chorus (3 voices per side), flanger (feedback of either sign) and reverb (size is a real decay time, 0.3 s to 6 s; damping; pre-delay). Chain order: crusher, panner, tremolo, compressor, chorus, flanger, delay, reverb. The FX and FX 2 tabs hold the controls; the pads at bottom left switch each effect on.
+
+Modulation: the MOD tab has two LFOs (sine, triangle, saw, square, random; free or synced to the host tempo from 1/1 to 1/16) and a four-slot matrix. Sources: LFO 1, LFO 2, velocity, mod wheel. Targets: cutoff (up to 5 octaves), resonance, pitch (up to 12 semitones), level, pulse width. Each slot has a signed amount. Pitch bend (plus or minus 2 semitones) and the mod wheel (CC 1) respond to MIDI. VIB adds a vibrato (rate, depth in cents) and PORTA glides between notes (glide time). LFOs free-run; they do not restart on each note.
+
+More effects (FX 3 tab; EQ, TAPE and LEAD buttons by the filter): a three-band EQ (low shelf 200 Hz, adjustable peaking band, high shelf 4 kHz, plus or minus 15 dB), tape (saturation, tone, wow and flutter), stereo widener (0 mono to 2 double side), wah (LFO or envelope follower), lo-fi (band-limit, wow, hiss, crackle) and OTT (three-band compressor that also lifts quiet material). LEAD is a mono legato mode: one voice, last note wins, overlapping notes do not retrigger the envelope, releasing the top note returns to the one still held, and with PORTA on the pitch slides.
+
+Sampler: load a wav/aiff/flac/mp3 (button or drag-and-drop), pitch follows the keys from a root note, loop and loop region, reverse, start point, gain, normalize, and a SAMPLE / Synth crossfade. The sample path is saved with the project.
+
+Band-limited oscillator (sine, saw, square with pulse width, triangle), unison, 16 voices, ADSR, one multimode 2-pole filter per voice (LP, HP, BP, Notch), and five effects: tremolo, ping-pong delay, compressor, bitcrusher, auto-panner. A generic parameter editor; no custom interface yet.
+
+GO/STOP on the ARP tab controls playback separately from ARP enable. GO loops while keys are held. STOP plays one cycle per fresh chord, then waits: Up/Down, Played and Random take one pass through the octave-expanded notes; Up-Down/Down-Up take one up-and-back pass; Waterfall takes 8 steps, or 16 with grouping; Chord takes one hit. Adding a key during a pass updates that pass; adding or repressing one key after completion does not restart it while another key stays down. Release all keys and press again to re-arm (HOLD keeps its latch, and a new gesture replaces it). Switching back to GO restarts held/latched notes from step zero on the host grid, or after the usual 25 ms wait without host playback. Switching GO to STOP finishes the current pass; that transition is an assumption, not a measured reference match. The display shows (STOP) only when waiting, after the final note-off. The mode is saved/automatable, older projects default to GO, and CRAFT/CHAOS keep it. See VERIFICATION.md for measurements and remaining assumptions.
+
+The ARP tab has a saved/automatable 1–16-step RHYTHM lane. Click for hit/rest, Shift-click for tie, drag vertically for velocity, and right-click for length/reset. RHYTHM enables it. Rests and ties retain the next pitch. Ordinary ties release at the gate point of their last tied cell; STOP plays its full number of hits through rests and carries final ties to their cell boundaries. Hit strength is linear with a 6% floor, including a stored zero; use Rest for silence. Waterfall's measured gate curve ranges from 1/8 to 6 steps, and its long notes ring through rests. The lane defaults off in older projects and is preserved by CRAFT/CHAOS. These behaviors were measured on a reference instrument (v1.5.1) using a user-exported lane state; details and remaining limits are in VERIFICATION.md.
+
+2-HAND on the ARP tab adds a slow low voice under the arp line: every 4th step (from the first) one extra note sounds an octave below a held chord tone, taking the tones from lowest to highest and cycling (C E G B C E ...), whatever the pattern, order or octave range. It is held for about 95% of those 4 steps at a steady level a little under the arp notes. The arp line itself does not change. Behaviour measured on a reference instrument, implementation original.
+
+Chance and Spray on the ARP tab are Relic's own additions (the reference's equivalent parameters turned out to have no audible effect, so there was nothing to match). CHANCE is the probability that a step plays: a dropped step is silent but the pattern still moves on, so the phrase keeps its place. SPRAY is the probability that a note that does play jumps one octave up or down at random, kept inside the MIDI range. Both are saved and automatable, and default to 1 and 0, which is the plain arp. Rhythm-lane rests stay silent, and the 2-HAND low voice is never dropped or sprayed.
+
+Grouping (5-5-6, 7-7-2, 3-3-3-3-4, 4-4-4-4) now works in the plain modes too (Up, Down, Up-Down, Down-Up, Played, Random), not only Waterfall. In those modes the line is cut into the group lengths and the pattern restarts at the top of every group, so Up on C E G with 5-5-6 plays C E G C E, C E G C E, C E G C E G. A grouped pass is one 16-step bar (a STOP pass plays the whole bar). Unlike Waterfall, a grouping does not change the rate in the plain modes. This is Relic's own design; the reference's behaviour there could not be measured cleanly.
+
+## Skin
+The window is drawn in code over art in `Assets/skin/` (background, logo, scene, panel and screen frames, buttons, pads, knob). Anything missing falls back to flat colors. Text uses a bitmap font from `Assets/skin/font_atlas.png` (metrics in `Source/FontMetrics.h`).
+
+The picture on the left is switchable: seven pixel-art scenes (card table, treant, wanderer, troll, orcs, knights, dragon) with small arrows in the picture's top corners to step through them; the choice is saved with the project. The picture fills the whole left column, and CRAFT, UNDO, REDO and CHAOS sit over its bottom edge on a darkened band. Scenes are `Assets/skin/scene_*.jpg`; to add one, put the file there, list it in `CMakeLists.txt` and in `kScenes` in `Source/PluginEditor.cpp`. A picture wider than the frame is cropped to fill it (`focusX` in `kScenes` picks which side is kept).
+
+Hover help: rest the mouse on almost any control (knobs, steppers, toggles, tabs, the sidebar and picture buttons, the effect pads, the displays) for about a second and a half and a short tip says what it does. The texts live in `Source/HelpText.h`, keyed by parameter id (`params()`) or button name (`names()`); to add one, add a line there. The delay is `kTooltipDelayMs` in `Source/PluginEditor.h`. The effect pads at the bottom left are text only, without icons.
+
+## Build
+JUCE is pulled in as a git submodule, so clone with `--recurse-submodules`:
+```bash
+git clone --recurse-submodules https://github.com/vibecodingwithdave/RELIC.git && cd RELIC
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target Relic_VST3 -j 8      # or Relic_AU, Relic_Standalone
+```
+Artifacts land in `build/Relic_artefacts/Release/`. To use in Logic, copy `Relic.component` to `~/Library/Audio/Plug-Ins/Components/`.
+
+## Test
+```bash
+python3 -m venv hv && ./hv/bin/pip install pedalboard numpy
+./hv/bin/python tools/verify.py            # oscillator, filter, effects
+./hv/bin/python tools/verify_sampler.py    # sampler
+./hv/bin/python tools/verify_arp_chords.py # chords and arp
+./hv/bin/python tools/verify_modfx.py     # chorus, flanger, reverb
+./hv/bin/python tools/verify_mod.py        # LFOs, matrix, vibrato, glide
+./hv/bin/python tools/verify_fx2.py        # EQ, tape, widener, wah, lo-fi, OTT, lead
+./hv/bin/python tools/verify_presets.py    # every preset file against the plugin's parameters
+python3 tools/make_factory_presets.py      # regenerate the factory presets, then rebuild
+```
+
+## Layout
+- `Source/Dsp/`: wavetables, filter, envelope, effects (header-only)
+- `Source/PluginProcessor.*`: voices, parameters, signal chain
+- `tools/`: headless verification
+
+## License
+
+Relic is free software, copyright McBABE! Labs, released under the **GNU Affero General Public License, version 3** (see `LICENSE`). If you receive a build of Relic, you are entitled to the complete corresponding source code, which is this repository; you may study, change and share it under the same license.
+
+Relic is built with the JUCE framework, used here under its AGPLv3 option, and the bundled third-party components keep their own licenses (see `NOTICE.md`).
+

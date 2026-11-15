@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Talking Bass" author="Relic">
+  <PARAM id="master" value="1.1"/>
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="osc_level" value="0.4"/>
+  <PARAM id="voices" value="1.0"/>
+  <PARAM id="attack_ms" value="2.0"/>
+  <PARAM id="decay_ms" value="200.0"/>
+  <PARAM id="sustain" value="0.85"/>
+  <PARAM id="release_ms" value="100.0"/>
+  <PARAM id="cutoff_hz" value="2500.0"/>
+  <PARAM id="resonance" value="0.2"/>
+  <PARAM id="talk_on" value="1.0"/>
+  <PARAM id="talk_vowel" value="0.4"/>
+  <PARAM id="talk_reso" value="0.65"/>
+  <PARAM id="talk_rate_hz" value="1.5"/>
+  <PARAM id="talk_depth" value="0.9"/>
+  <PARAM id="talk_mix" value="0.8"/>
+  <PARAM id="comp_on" value="1.0"/>
+  <PARAM id="comp_threshold_db" value="-16.0"/>
+  <PARAM id="comp_ratio" value="3.0"/>
+</STATE>

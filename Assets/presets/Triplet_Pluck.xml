@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Triplet Pluck" author="Relic">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="260.0"/>
+  <PARAM id="sustain" value="0.0"/>
+  <PARAM id="release_ms" value="200.0"/>
+  <PARAM id="cutoff_hz" value="6500.0"/>
+  <PARAM id="arp_on" value="1.0"/>
+  <PARAM id="arp_div" value="9.0"/>
+  <PARAM id="arp_mode" value="0.0"/>
+  <PARAM id="arp_octaves" value="3.0"/>
+  <PARAM id="arp_gate" value="0.4"/>
+  <PARAM id="arp_swing" value="0.2"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="250.0"/>
+  <PARAM id="delay_feedback" value="0.35"/>
+  <PARAM id="delay_mix" value="0.25"/>
+</STATE>

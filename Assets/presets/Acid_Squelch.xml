@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Acid Squelch" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="voices" value="1.0"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="180.0"/>
+  <PARAM id="sustain" value="0.35"/>
+  <PARAM id="release_ms" value="90.0"/>
+  <PARAM id="cutoff_hz" value="700.0"/>
+  <PARAM id="resonance" value="0.85"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="187.0"/>
+  <PARAM id="delay_feedback" value="0.45"/>
+  <PARAM id="delay_mix" value="0.2"/>
+</STATE>

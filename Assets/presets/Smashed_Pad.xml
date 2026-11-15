@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Smashed Pad" author="Relic">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="unison_voices" value="5.0"/>
+  <PARAM id="unison_detune" value="20.0"/>
+  <PARAM id="unison_spread" value="0.9"/>
+  <PARAM id="attack_ms" value="500.0"/>
+  <PARAM id="decay_ms" value="800.0"/>
+  <PARAM id="sustain" value="0.9"/>
+  <PARAM id="release_ms" value="1200.0"/>
+  <PARAM id="cutoff_hz" value="2800.0"/>
+  <PARAM id="ott_on" value="1.0"/>
+  <PARAM id="ott_depth" value="0.7"/>
+  <PARAM id="ott_time" value="0.6"/>
+  <PARAM id="ott_mix" value="0.7"/>
+  <PARAM id="widener_on" value="1.0"/>
+  <PARAM id="widener_width" value="1.6"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.6"/>
+  <PARAM id="reverb_mix" value="0.25"/>
+</STATE>

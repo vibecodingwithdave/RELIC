@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Minor Strum Pad" author="Relic">
+  <PARAM id="osc_level" value="0.2"/>
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="unison_voices" value="5.0"/>
+  <PARAM id="unison_detune" value="16.0"/>
+  <PARAM id="unison_spread" value="0.85"/>
+  <PARAM id="attack_ms" value="300.0"/>
+  <PARAM id="decay_ms" value="700.0"/>
+  <PARAM id="sustain" value="0.8"/>
+  <PARAM id="release_ms" value="1200.0"/>
+  <PARAM id="cutoff_hz" value="2200.0"/>
+  <PARAM id="resonance" value="0.1"/>
+  <PARAM id="chord_on" value="1.0"/>
+  <PARAM id="chord_key" value="9.0"/>
+  <PARAM id="chord_scale" value="1.0"/>
+  <PARAM id="chord_type" value="4.0"/>
+  <PARAM id="chord_voicing" value="1.0"/>
+  <PARAM id="chord_strum_ms" value="70.0"/>
+</STATE>
