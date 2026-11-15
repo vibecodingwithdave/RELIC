@@ -1,0 +1,14 @@
+Welcome to Relic.
+
+Relic is a polyphonic synthesizer. This installer can put in two things:
+
+  - the plugin (VST3), for Ardour and other music software
+  - the standalone app, which runs on its own
+
+After installing the plugin, rescan plugins in your music software. In Ardour: Window > Plugin Manager > Scan.
+
+Relic is free software, released under the GNU Affero General Public License, version 3. You are entitled to the complete source code of this version. It is published at:
+
+  https://github.com/vibecodingwithdave/RELIC
+
+Your presets and settings are kept in your user folder and are not removed when you uninstall.

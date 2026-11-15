@@ -37,6 +37,38 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $version = (Select-String -Path CMakeLists.txt -Pattern 'project\(Relic VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          Write-Host "Relic version $version"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" installer/relic.iss
+          Get-ChildItem installer-out | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Relic-Setup
+          path: installer-out/Relic-Setup-*.exe
+
+      # Install it silently, load the installed plugin, then uninstall and check that it is gone.
+      - name: Test the installer
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          pip install pedalboard numpy scipy
+          $setup = (Get-ChildItem installer-out/Relic-Setup-*.exe | Select-Object -First 1).FullName
+          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=install.log' -Wait
+          $dll = "$env:CommonProgramFiles\VST3\Relic.vst3\Contents\x86_64-win\Relic.vst3"
+          if (-not (Test-Path $dll)) { Get-Content install.log -Tail 40; throw "plugin was not installed at $dll" }
+          if (-not (Test-Path "$env:ProgramFiles\Relic\Relic.exe")) { throw 'standalone app was not installed' }
+          python -c "import sys; from pedalboard import load_plugin; p = load_plugin(sys.argv[1]); print(len(p.parameters), 'parameters'); assert len(p.parameters) > 200" $dll
+          Start-Process "$env:ProgramFiles\Relic\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          if (Test-Path $dll) { throw 'plugin is still there after uninstalling' }
+          if (Test-Path "$env:ProgramFiles\Relic\Relic.exe") { throw 'app is still there after uninstalling' }
+          Write-Host 'install, load and uninstall all worked'
+
       # The plugin-host library used by the tests cannot scan a Windows .vst3 folder, but loads the DLL inside it fine.
       # Put the DLL where the test scripts expect the plugin (after packaging, so the zip is unaffected).
       - name: Plugin load tests
