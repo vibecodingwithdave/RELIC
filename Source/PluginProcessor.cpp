@@ -328,6 +328,19 @@ static void installFactoryPresets()
     stamp.replaceWithText (version);
 }
 
+// The category sits in the first attributes of the file, so only the start of it is read (the library can hold hundreds of presets).
+static juce::String readCategory (const juce::File& f)
+{
+    juce::FileInputStream in (f); if (! in.openedOk()) return {};
+    char buf[2048] = {}; const int n = in.read (buf, (int) sizeof (buf) - 1); if (n <= 0) return {};
+    const auto head = juce::String::fromUTF8 (buf, n); const int stateAt = head.indexOf ("<STATE"); if (stateAt < 0) return {};
+    const auto fromState = head.substring (stateAt); const int tagEnd = fromState.indexOfChar ('>');        // skips the <?xml ...?> line
+    const auto tag = tagEnd > 0 ? fromState.substring (0, tagEnd) : fromState;
+    const int k = tag.indexOf (" category=\""); if (k < 0) return {};
+    const auto rest = tag.substring (k + 11);
+    return rest.upToFirstOccurrenceOf ("\"", false, false).replace ("&amp;", "&").trim();
+}
+
 std::vector<PresetEntry> RelicProcessor::scanPresets() const
 {
     std::vector<PresetEntry> out; const auto root = presetsRoot();
@@ -336,6 +349,7 @@ std::vector<PresetEntry> RelicProcessor::scanPresets() const
         if (f.getFileName().startsWith (".")) continue;
         PresetEntry e; e.file = f; e.name = f.getFileNameWithoutExtension();
         e.bank = f.getParentDirectory().getRelativePathFrom (root).replaceCharacter ('\\', '/');
+        e.category = readCategory (f);
         out.push_back (e);
     }
     auto rank = [] (const juce::String& b) { return b == "Factory" ? 0 : (b == "User" ? 1 : 2); };
@@ -366,6 +380,7 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
     else { clearSample(); if (samplePath.isNotEmpty()) sampleError = "Sample not found: " + sf.getFileName(); }
     { const auto pb = xml->getStringAttribute ("samplePathB"); juce::File fb (pb); if (pb.isNotEmpty() && fb.existsAsFile()) loadSampleFile (fb, false, true); else clearSampleB(); }
     apvts.state.setProperty ("presetName", xml->getStringAttribute ("presetName", f.getFileNameWithoutExtension()), nullptr);
+    apvts.state.setProperty ("presetCategory", xml->getStringAttribute ("category"), nullptr);
     apvts.state.setProperty ("presetBank", f.getParentDirectory().getRelativePathFrom (presetsRoot()).replaceCharacter ('\\', '/'), nullptr);
     return true;
 }
@@ -373,18 +388,19 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
 void RelicProcessor::initPreset()
 {
     resetAllParameters (*this); clearSample(); clearSampleB(); sampleError = {};
-    apvts.state.setProperty ("presetName", "Init", nullptr); apvts.state.setProperty ("presetBank", "", nullptr);
+    apvts.state.setProperty ("presetName", "Init", nullptr); apvts.state.setProperty ("presetBank", "", nullptr); apvts.state.setProperty ("presetCategory", "", nullptr);
 }
 
-juce::File RelicProcessor::savePreset (const juce::String& name)
+juce::File RelicProcessor::savePreset (const juce::String& name, const juce::String& category)
 {
     auto dir = presetsRoot().getChildFile ("User"); dir.createDirectory();
     auto safe = juce::File::createLegalFileName (name.trim()); if (safe.isEmpty()) safe = "Untitled";
     auto file = dir.getChildFile (safe + ".xml");
-    apvts.state.setProperty ("presetName", name.trim(), nullptr); apvts.state.setProperty ("presetBank", "User", nullptr);
+    apvts.state.setProperty ("presetName", name.trim(), nullptr); apvts.state.setProperty ("presetBank", "User", nullptr); apvts.state.setProperty ("presetCategory", category, nullptr);
     if (auto xml = apvts.copyState().createXml())
     {
         xml->setAttribute ("presetName", name.trim());
+        if (category.isNotEmpty()) xml->setAttribute ("category", category); else xml->removeAttribute ("category");
         file.replaceWithText (xml->toString());
     }
     return file;

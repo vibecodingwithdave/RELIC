@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Sine Bloom" author="Relic">
+<STATE presetName="Sine Bloom" author="Relic" category="Pads">
   <PARAM id="waveform" value="0.0"/>
   <PARAM id="unison_voices" value="3.0"/>
   <PARAM id="unison_detune" value="5.0"/>

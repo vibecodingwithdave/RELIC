@@ -643,6 +643,24 @@ public:
     {
         addAndMakeVisible (banks); addAndMakeVisible (presets);
         banks.onClick = [this] (int r) { selBank = r; fillPresets(); };
+        // search box
+        search.setMultiLine (false); search.setReturnKeyStartsNewLine (false); search.setSelectAllWhenFocused (true);
+        search.setTextToShowWhenEmpty ("Search presets", muted);
+        search.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0b090e)); search.setColour (juce::TextEditor::textColourId, parchment);
+        search.setColour (juce::TextEditor::outlineColourId, goldDim); search.setColour (juce::TextEditor::focusedOutlineColourId, gold);
+        search.setColour (juce::TextEditor::highlightColourId, gold.withAlpha (0.3f)); search.setColour (juce::CaretComponent::caretColourId, gold);
+        search.onTextChange = [this] { fillPresets(); }; search.onEscapeKey = [this] { search.clear(); };
+        search.setTooltip (help::forName ("preset_search")); addAndMakeVisible (search);
+        // category buttons: ALL, the seven categories, then OTHER
+        const char* chipText[9] = { "ALL", "PADS", "KEYS", "LEADS", "BASS", "PLUCK", "ARPS", "FX", "OTHER" };
+        for (int i = 0; i < 9; ++i)
+        {
+            chips[i] = std::make_unique<StoneButton> (chipText[i], true, false); chips[i]->textScale = 0.34f;
+            chips[i]->setTooltip (help::forName (juce::String ("cat:") + chipText[i]));
+            chips[i]->onClick = [this, i] { selCat = i; for (int j = 0; j < 9; ++j) chips[j]->setToggleState (j == selCat, juce::dontSendNotification); fillPresets(); };
+            addAndMakeVisible (*chips[i]);
+        }
+        chips[0]->setToggleState (true, juce::dontSendNotification);
         presets.onClick = [this] (int r)
         {
             if (r >= 0 && r < (int) shown.size() && proc.loadPresetFile (shown[(size_t) r].file)) updateSelection();
@@ -674,10 +692,15 @@ public:
         if (skin().screen.isValid()) nineSlice (g, skin().screen, skin().screen.getBounds(), getLocalBounds(), 190, juce::jlimit (10, 34, (int) (getHeight() * 0.07f)));
         g.setColour (gold); drawText (g, "PRESETS", juce::Rectangle<float> (0, (float) getHeight() * 0.045f, (float) getWidth(), (float) getHeight() * 0.07f), (float) getHeight() * 0.055f, juce::Justification::centred);
         if (all.empty()) { g.setColour (muted); drawText (g, "No presets found. Press RESCAN.", getLocalBounds(), (float) getHeight() * 0.05f, juce::Justification::centred); }
+        else if (shown.empty()) { g.setColour (muted); drawText (g, "No presets match.", presets.getBounds().reduced (10), (float) getHeight() * 0.045f, juce::Justification::centred); }
     }
     void resized() override
     {
         auto b = getLocalBounds().reduced (getWidth() / 28, getHeight() / 14); b.removeFromTop (getHeight() / 11);
+        auto searchRow = b.removeFromTop (getHeight() / 12); b.removeFromTop (getHeight() / 80);
+        search.setBounds (searchRow); search.setFont (font ((float) searchRow.getHeight() * 0.62f, false)); search.setIndents (10, (searchRow.getHeight() - (int) ((float) searchRow.getHeight() * 0.62f)) / 2);
+        auto chipRow = b.removeFromTop (getHeight() / 13); b.removeFromTop (getHeight() / 80);
+        for (int i = 0; i < 9; ++i) chips[i]->setBounds (chipRow.removeFromLeft (chipRow.getWidth() / (9 - i)).reduced (1, 0));
         auto bottom = b.removeFromBottom (getHeight() / 10); b.removeFromBottom (getHeight() / 40);
         banks.setBounds (b.removeFromLeft (b.getWidth() * 40 / 100)); b.removeFromLeft (getWidth() / 60); presets.setBounds (b);
         const int bw = bottom.getWidth() / 4;
@@ -688,15 +711,21 @@ private:
     void fillPresets()
     {
         shown.clear(); juce::StringArray names; int sel = -1;
+        const auto q = search.getText().trim().toLowerCase();
+        const auto wanted = selCat == 0 ? juce::String() : (selCat == 8 ? juce::String ("Other") : presetCategories()[selCat - 1]);
         for (auto& e : all)
-            if (selBank == 0 || e.bank == bankNames[selBank - 1])
-            {
-                if (e.name == proc.getPresetName() && e.bank == proc.getPresetBank()) sel = (int) shown.size();
-                shown.push_back (e); names.add (e.name);
-            }
-        presets.setItems (names, sel);
+        {
+            const auto cat = presetCategories().contains (e.category) ? e.category : juce::String ("Other");
+            if (selBank != 0 && e.bank != bankNames[selBank - 1]) continue;
+            if (wanted.isNotEmpty() && cat != wanted) continue;
+            if (q.isNotEmpty() && ! (e.name + " " + cat + " " + e.bank).toLowerCase().contains (q)) continue;
+            if (e.name == proc.getPresetName() && e.bank == proc.getPresetBank()) sel = (int) shown.size();
+            shown.push_back (e); names.add (e.name);
+        }
+        presets.setItems (names, sel); repaint();
     }
     RelicProcessor& proc; TextList banks, presets; std::unique_ptr<StoneButton> btn[4];
+    juce::TextEditor search; std::unique_ptr<StoneButton> chips[9]; int selCat = 0;
     std::vector<PresetEntry> all, shown; juce::StringArray bankNames; int selBank = 0;
 };
 

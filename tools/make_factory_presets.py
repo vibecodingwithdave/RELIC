@@ -65,10 +65,77 @@ P = {
  'Env Filter Pluck':dict(waveform=SAW, osc_level=.4, unison_voices=2, unison_detune=8, attack_ms=1, decay_ms=350, sustain=.1, release_ms=250, cutoff_hz=500, resonance=.3, menv1_attack_ms=1, menv1_decay_ms=300, menv1_sustain=0, mod1_src=5, mod1_dst=1, mod1_amt=.65, delay_on=1, delay_time_ms=300, delay_feedback=.3, delay_mix=.18),
  'Macro Sweep':     dict(waveform=SAW, osc_level=.3, unison_voices=3, unison_detune=12, unison_spread=.7, attack_ms=5, decay_ms=400, sustain=.75, release_ms=300, cutoff_hz=600, resonance=.3, macro_1=.4, mod1_src=9, mod1_dst=1, mod1_amt=.7, mod2_src=10, mod2_dst=2, mod2_amt=.5),
 }
+# Browser category of each factory preset. Keep this list to the categories the plugin knows (presetCategories() in PluginProcessor.h).
+CATEGORY = {
+    'Auto Pan Pad': 'Pads',
+    'Bell Pad': 'Pads',
+    'Jet Sweep Pad': 'Pads',
+    'Minor Strum Pad': 'Pads',
+    'Sine Bloom': 'Pads',
+    'Smashed Pad': 'Pads',
+    'Soft Strings': 'Pads',
+    'Vowel Pad': 'Pads',
+    'Warm Pad': 'Pads',
+    'Wavetable Drift': 'Pads',
+    'XY Morph Pad': 'Pads',
+    'Chord Stabs': 'Keys',
+    'Chorus Keys': 'Keys',
+    'Crush Keys': 'Keys',
+    'Dusty Memory': 'Keys',
+    'Glass Keys': 'Keys',
+    'Organ Stack': 'Keys',
+    'Pitch Echo Keys': 'Keys',
+    'SP-12 Keys': 'Keys',
+    'Tape Echo Keys': 'Keys',
+    'Tape Keys': 'Keys',
+    'Glass Lead': 'Leads',
+    'Octave Lead': 'Leads',
+    'Reed Lead': 'Leads',
+    'Square Lead': 'Leads',
+    'Vibrato Lead': 'Leads',
+    'Wah Lead': 'Leads',
+    'Wash Delay Lead': 'Leads',
+    'Wide Saw Stack': 'Leads',
+    'Fifth Stack': 'Leads',
+    'OBX Brass': 'Leads',
+    'Macro Sweep': 'Leads',
+    'Acid Squelch': 'Bass',
+    'Glide Bass': 'Bass',
+    'MPC Chop Bass': 'Bass',
+    'Sub Bass': 'Bass',
+    'Sub Layer Bass': 'Bass',
+    'Synced Wobble': 'Bass',
+    'Talking Bass': 'Bass',
+    'Wobble Bass': 'Bass',
+    'Cathedral Bells': 'Plucks & Bells',
+    'Dream Guitar': 'Plucks & Bells',
+    'Env Filter Pluck': 'Plucks & Bells',
+    'Glass Chime': 'Plucks & Bells',
+    'Nylon Dream': 'Plucks & Bells',
+    'Octave Up Echoes': 'Plucks & Bells',
+    'Pluck Bell': 'Plucks & Bells',
+    'String Pluck': 'Plucks & Bells',
+    'Table Pluck': 'Plucks & Bells',
+    'Tape Delay Pluck': 'Plucks & Bells',
+    'Temple Bell': 'Plucks & Bells',
+    'Arp Sequence': 'Arps',
+    'Dorian Arp Chords': 'Arps',
+    'Harp Arp': 'Arps',
+    'Triplet Pluck': 'Arps',
+    'Dark Drone': 'FX & Ambient',
+    'Spectral Sparkle': 'FX & Ambient',
+    'Digital Rain': 'FX & Ambient',
+    'Sweep Machine': 'FX & Ambient',
+}
+assert set(CATEGORY) == set(P), (set(P) ^ set(CATEGORY))
+import re as _re
+_hdr = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Source', 'PluginProcessor.h'), encoding='utf-8').read()
+KNOWN = set(_re.findall(r'"([^"]+)"', _re.search(r'presetCategories\(\)\s*\{.*?\{([^}]*)\}', _hdr, _re.S).group(1)))
+assert set(CATEGORY.values()) <= KNOWN, set(CATEGORY.values()) - KNOWN   # the plugin must know every category used here
 os.makedirs(OUT, exist_ok=True)
 for f in os.listdir(OUT):
     if f.endswith('.xml'): os.remove(os.path.join(OUT, f))
 for name, params in P.items():
     rows = ''.join(f'  <PARAM id="{k}" value="{float(v)!r}"/>\n' for k, v in params.items())
-    open(os.path.join(OUT, name.replace(' ', '_') + '.xml'), 'w').write(f'<?xml version="1.0" encoding="UTF-8"?>\n<STATE presetName="{name}" author="Relic">\n{rows}</STATE>\n')
+    open(os.path.join(OUT, name.replace(' ', '_') + '.xml'), 'w').write(f'<?xml version="1.0" encoding="UTF-8"?>\n<STATE presetName="{name}" author="Relic" category="{CATEGORY[name].replace("&", "&amp;")}">\n{rows}</STATE>\n')
 print(len(P), 'presets written to', os.path.normpath(OUT))

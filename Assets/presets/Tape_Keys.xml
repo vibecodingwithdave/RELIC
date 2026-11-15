@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Tape Keys" author="Relic">
+<STATE presetName="Tape Keys" author="Relic" category="Keys">
   <PARAM id="waveform" value="3.0"/>
   <PARAM id="attack_ms" value="3.0"/>
   <PARAM id="decay_ms" value="500.0"/>

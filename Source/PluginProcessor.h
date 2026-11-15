@@ -20,7 +20,14 @@ struct SampleData
     int frames() const { return (int) L.size(); }
 };
 
-struct PresetEntry { juce::String bank, name; juce::File file; };
+struct PresetEntry { juce::String bank, name, category; juce::File file; };
+
+// The categories shown in the preset browser. A preset whose category is empty or unknown counts as "Other".
+inline const juce::StringArray& presetCategories()
+{
+    static const juce::StringArray c { "Pads", "Keys", "Leads", "Bass", "Plucks & Bells", "Arps", "FX & Ambient" };
+    return c;
+}
 
 class RelicProcessor : public juce::AudioProcessor
 {
@@ -55,9 +62,10 @@ public:
     std::vector<PresetEntry> scanPresets() const;                 // factory, user and imported presets on disk
     bool loadPresetFile (const juce::File& f);                    // message thread
     void initPreset();                                            // every control back to its default, no sample
-    juce::File savePreset (const juce::String& name);             // saves to Presets/User
+    juce::File savePreset (const juce::String& name, const juce::String& category = {});   // saves to Presets/User
     juce::String getPresetName() const { return apvts.state.getProperty ("presetName", "Init").toString(); }
     juce::String getPresetBank() const { return apvts.state.getProperty ("presetBank", "").toString(); }
+    juce::String getPresetCategory() const { return apvts.state.getProperty ("presetCategory", "").toString(); }
 
     // ---- sampler ----
     bool loadSampleFile (const juce::File& f, bool setMixToSample = true, bool slotB = false);      // message thread

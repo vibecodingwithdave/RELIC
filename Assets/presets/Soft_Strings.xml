@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Soft Strings" author="Relic">
+<STATE presetName="Soft Strings" author="Relic" category="Pads">
   <PARAM id="waveform" value="1.0"/>
   <PARAM id="unison_voices" value="7.0"/>
   <PARAM id="unison_detune" value="24.0"/>

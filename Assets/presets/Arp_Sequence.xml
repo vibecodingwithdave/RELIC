@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Arp Sequence" author="Relic">
+<STATE presetName="Arp Sequence" author="Relic" category="Arps">
   <PARAM id="waveform" value="1.0"/>
   <PARAM id="attack_ms" value="2.0"/>
   <PARAM id="decay_ms" value="180.0"/>

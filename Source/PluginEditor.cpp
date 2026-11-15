@@ -54,13 +54,21 @@ void RelicEditor::doSave()
 {
     auto* aw = new juce::AlertWindow ("Save preset", "Name your preset. It is saved in your User bank.", juce::MessageBoxIconType::NoIcon);
     aw->addTextEditor ("name", proc.getPresetName() == "Init" ? juce::String() : proc.getPresetName());
+    {
+        juce::StringArray cats (presetCategories()); cats.add ("Other");
+        aw->addComboBox ("category", cats, "Category");
+        const int cur = presetCategories().indexOf (proc.getPresetCategory());
+        aw->getComboBoxComponent ("category")->setSelectedItemIndex (cur >= 0 ? cur : cats.size() - 1, juce::dontSendNotification);
+    }
     aw->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey)); aw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, aw] (int r)
     {
         if (r != 1) return;
         const auto name = aw->getTextEditorContents ("name").trim(); if (name.isEmpty()) return;
         auto f = RelicProcessor::presetsRoot().getChildFile ("User").getChildFile (juce::File::createLegalFileName (name) + ".xml");
-        auto doIt = [this, name] { proc.savePreset (name); if (browser->isVisible()) browser->refresh(); };
+        const int ci = aw->getComboBoxComponent ("category")->getSelectedItemIndex();
+        const juce::String category = ci >= 0 && ci < presetCategories().size() ? presetCategories()[ci] : juce::String();   // "Other" is saved as no category
+        auto doIt = [this, name, category] { proc.savePreset (name, category); if (browser->isVisible()) browser->refresh(); };
         if (f.existsAsFile())
             juce::AlertWindow::showAsync (juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon).withTitle ("Replace preset?")
                 .withMessage ("\"" + name + "\" already exists in your User presets.").withButton ("Replace").withButton ("Cancel").withAssociatedComponent (this),

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Table Pluck" author="Relic">
+<STATE presetName="Table Pluck" author="Relic" category="Plucks &amp; Bells">
   <PARAM id="waveform" value="4.0"/>
   <PARAM id="pulse_width" value="0.4"/>
   <PARAM id="osc_level" value="0.5"/>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Bell Pad" author="Relic">
+<STATE presetName="Bell Pad" author="Relic" category="Pads">
   <PARAM id="waveform" value="6.0"/>
   <PARAM id="pulse_width" value="0.85"/>
   <PARAM id="osc_level" value="0.4"/>

@@ -52,6 +52,8 @@ The window is drawn in code over art in `Assets/skin/` (background, logo, scene,
 
 The picture on the left is switchable: seven pixel-art scenes (card table, treant, wanderer, troll, orcs, knights, dragon) with small arrows in the picture's top corners to step through them; the choice is saved with the project. The picture fills the whole left column, and CRAFT, UNDO, REDO and CHAOS sit over its bottom edge on a darkened band. Scenes are `Assets/skin/scene_*.jpg`; to add one, put the file there, list it in `CMakeLists.txt` and in `kScenes` in `Source/PluginEditor.cpp`. A picture wider than the frame is cropped to fill it (`focusX` in `kScenes` picks which side is kept).
 
+Preset categories: every factory preset has a category (Pads, Keys, Leads, Bass, Plucks & Bells, Arps, FX & Ambient). The preset browser has a search box (name, category or bank) and a row of category buttons (ALL, PADS, KEYS, LEADS, BASS, PLUCK, ARPS, FX, OTHER) that combine with the bank list. SAVE AS asks which category to file a preset under; presets without one (or saved as Other) show under OTHER. The category is the `category` attribute on the `STATE` element of the preset file, and the factory ones are assigned in `tools/make_factory_presets.py`.
+
 Hover help: rest the mouse on almost any control (knobs, steppers, toggles, tabs, the sidebar and picture buttons, the effect pads, the displays) for about a second and a half and a short tip says what it does. The texts live in `Source/HelpText.h`, keyed by parameter id (`params()`) or button name (`names()`); to add one, add a line there. The delay is `kTooltipDelayMs` in `Source/PluginEditor.h`. The effect pads at the bottom left are text only, without icons.
 
 ## Build

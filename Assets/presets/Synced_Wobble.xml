@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Synced Wobble" author="Relic">
+<STATE presetName="Synced Wobble" author="Relic" category="Bass">
   <PARAM id="waveform" value="2.0"/>
   <PARAM id="pulse_width" value="0.5"/>
   <PARAM id="voices" value="1.0"/>

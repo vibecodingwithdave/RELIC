@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Dream Guitar" author="Relic">
+<STATE presetName="Dream Guitar" author="Relic" category="Plucks &amp; Bells">
   <PARAM id="waveform" value="3.0"/>
   <PARAM id="attack_ms" value="2.0"/>
   <PARAM id="decay_ms" value="700.0"/>

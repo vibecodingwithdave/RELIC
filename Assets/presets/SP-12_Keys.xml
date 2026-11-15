@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="SP-12 Keys" author="Relic">
+<STATE presetName="SP-12 Keys" author="Relic" category="Keys">
   <PARAM id="waveform" value="3.0"/>
   <PARAM id="osc_level" value="0.5"/>
   <PARAM id="attack_ms" value="2.0"/>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Octave Lead" author="Relic">
+<STATE presetName="Octave Lead" author="Relic" category="Leads">
   <PARAM id="waveform" value="2.0"/>
   <PARAM id="pulse_width" value="0.45"/>
   <PARAM id="osc_level" value="0.5"/>

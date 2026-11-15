@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Crush Keys" author="Relic">
+<STATE presetName="Crush Keys" author="Relic" category="Keys">
   <PARAM id="waveform" value="2.0"/>
   <PARAM id="attack_ms" value="2.0"/>
   <PARAM id="decay_ms" value="350.0"/>

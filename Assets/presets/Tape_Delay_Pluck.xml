@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<STATE presetName="Tape Delay Pluck" author="Relic">
+<STATE presetName="Tape Delay Pluck" author="Relic" category="Plucks &amp; Bells">
   <PARAM id="master" value="1.1"/>
   <PARAM id="waveform" value="5.0"/>
   <PARAM id="pulse_width" value="0.6"/>
