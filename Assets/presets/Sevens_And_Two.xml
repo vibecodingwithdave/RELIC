@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Sevens And Two" author="Relic" category="Arps">
+  <PARAM id="waveform" value="2.0"/>
+  <PARAM id="pulse_width" value="0.42"/>
+  <PARAM id="osc_level" value="0.35"/>
+  <PARAM id="attack_ms" value="2.0"/>
+  <PARAM id="decay_ms" value="220.0"/>
+  <PARAM id="sustain" value="0.25"/>
+  <PARAM id="release_ms" value="200.0"/>
+  <PARAM id="cutoff_hz" value="3600.0"/>
+  <PARAM id="resonance" value="0.22"/>
+  <PARAM id="arp_on" value="1.0"/>
+  <PARAM id="arp_div" value="10.0"/>
+  <PARAM id="arp_mode" value="2.0"/>
+  <PARAM id="arp_octaves" value="2.0"/>
+  <PARAM id="arp_gate" value="0.5"/>
+  <PARAM id="arp_grouping" value="2.0"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="300.0"/>
+  <PARAM id="delay_feedback" value="0.3"/>
+  <PARAM id="delay_mix" value="0.25"/>
+</STATE>

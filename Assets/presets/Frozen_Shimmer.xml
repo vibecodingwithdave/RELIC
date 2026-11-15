@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Frozen Shimmer" author="Relic" category="Pads">
+  <PARAM id="waveform" value="0.0"/>
+  <PARAM id="osc_level" value="0.38"/>
+  <PARAM id="unison_voices" value="3.0"/>
+  <PARAM id="unison_detune" value="6.0"/>
+  <PARAM id="unison_spread" value="0.6"/>
+  <PARAM id="attack_ms" value="900.0"/>
+  <PARAM id="decay_ms" value="800.0"/>
+  <PARAM id="sustain" value="0.9"/>
+  <PARAM id="release_ms" value="2400.0"/>
+  <PARAM id="pdelay_on" value="1.0"/>
+  <PARAM id="pdelay_time_ms" value="520.0"/>
+  <PARAM id="pdelay_feedback" value="0.6"/>
+  <PARAM id="pdelay_semi" value="12.0"/>
+  <PARAM id="pdelay_mix" value="0.4"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.95"/>
+  <PARAM id="reverb_damp" value="0.5"/>
+  <PARAM id="reverb_mix" value="0.45"/>
+</STATE>

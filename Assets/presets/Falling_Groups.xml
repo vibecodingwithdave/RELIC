@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Falling Groups" author="Relic" category="Arps">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="osc_level" value="0.5"/>
+  <PARAM id="attack_ms" value="2.0"/>
+  <PARAM id="decay_ms" value="250.0"/>
+  <PARAM id="sustain" value="0.3"/>
+  <PARAM id="release_ms" value="250.0"/>
+  <PARAM id="cutoff_hz" value="5500.0"/>
+  <PARAM id="arp_on" value="1.0"/>
+  <PARAM id="arp_div" value="10.0"/>
+  <PARAM id="arp_mode" value="1.0"/>
+  <PARAM id="arp_octaves" value="2.0"/>
+  <PARAM id="arp_gate" value="0.5"/>
+  <PARAM id="arp_grouping" value="3.0"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_mix" value="0.25"/>
+</STATE>

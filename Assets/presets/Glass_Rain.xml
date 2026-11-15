@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Glass Rain" author="Relic" category="FX &amp; Ambient">
+  <PARAM id="waveform" value="6.0"/>
+  <PARAM id="osc_level" value="0.62"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="500.0"/>
+  <PARAM id="sustain" value="0.0"/>
+  <PARAM id="release_ms" value="900.0"/>
+  <PARAM id="cutoff_hz" value="10000.0"/>
+  <PARAM id="pdelay_on" value="1.0"/>
+  <PARAM id="pdelay_time_ms" value="330.0"/>
+  <PARAM id="pdelay_feedback" value="0.55"/>
+  <PARAM id="pdelay_semi" value="12.0"/>
+  <PARAM id="pdelay_mix" value="0.4"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.9"/>
+  <PARAM id="reverb_mix" value="0.4"/>
+</STATE>

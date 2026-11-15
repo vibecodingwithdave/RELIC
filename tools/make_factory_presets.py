@@ -65,6 +65,67 @@ P = {
  'Env Filter Pluck':dict(waveform=SAW, osc_level=.4, unison_voices=2, unison_detune=8, attack_ms=1, decay_ms=350, sustain=.1, release_ms=250, cutoff_hz=500, resonance=.3, menv1_attack_ms=1, menv1_decay_ms=300, menv1_sustain=0, mod1_src=5, mod1_dst=1, mod1_amt=.65, delay_on=1, delay_time_ms=300, delay_feedback=.3, delay_mix=.18),
  'Macro Sweep':     dict(waveform=SAW, osc_level=.3, unison_voices=3, unison_detune=12, unison_spread=.7, attack_ms=5, decay_ms=400, sustain=.75, release_ms=300, cutoff_hz=600, resonance=.3, macro_1=.4, mod1_src=9, mod1_dst=1, mod1_amt=.7, mod2_src=10, mod2_dst=2, mod2_amt=.5),
 }
+
+def lane(types, vels=None):
+    """Arp rhythm lane: types is a string of H (hit), R (rest) and T (tie), one per step; vels gives each step's strength (0..1)."""
+    d = dict(arp_rhythm_on=1, arp_rhythm_length=len(types))
+    for i, t in enumerate(types, 1):
+        d[f'arp_rhythm_{i}_type'] = {'H': 0, 'R': 1, 'T': 2}[t]
+        d[f'arp_rhythm_{i}_velocity'] = vels[i - 1] if vels else 1.0
+    return d
+
+# ---- second batch: shows off 2-HAND, Chance, Spray, grouping, Waterfall shapes, the rhythm lane, the chord engine, the mod matrix and the FX 3 / FX 4 effects
+P.update({
+ # arps
+ 'Two Hand Climb':     dict(waveform=TRI, osc_level=.5, attack_ms=3, decay_ms=250, sustain=.6, release_ms=500, cutoff_hz=5000, arp_on=1, arp_div=7, arp_mode=0, arp_octaves=2, arp_gate=.85, arp_two_hand=1, reverb_on=1, reverb_size=.7, reverb_mix=.3),
+ 'Two Hand Waterfall': dict(waveform=SAW, osc_level=0.32, attack_ms=2, decay_ms=300, sustain=.5, release_ms=600, cutoff_hz=3800, resonance=.15, arp_on=1, arp_div=10, arp_mode=7, arp_octaves=1, arp_gate=.3, arp_two_hand=1, reverb_on=1, reverb_size=.8, reverb_mix=.35),
+ 'Chance Pluck':       dict(waveform=PLUCK, pulse_width=.6, osc_level=0.72, attack_ms=1, decay_ms=300, sustain=.2, release_ms=400, cutoff_hz=8000, arp_on=1, arp_div=10, arp_mode=2, arp_octaves=2, arp_gate=.5, arp_chance=.6, delay_on=1, delay_time_ms=300, delay_feedback=.4, delay_mix=.3, reverb_on=1, reverb_mix=.2),
+ 'Spray Harp':         dict(waveform=PLUCK, pulse_width=.8, osc_level=.5, attack_ms=1, decay_ms=350, sustain=1.0, release_ms=800, cutoff_hz=10000, arp_on=1, arp_div=7, arp_mode=0, arp_octaves=1, arp_gate=.85, arp_spray=.45, reverb_on=1, reverb_size=.75, reverb_mix=.35),
+ 'Scatter Bells':      dict(waveform=BELL, osc_level=0.7, attack_ms=1, decay_ms=500, sustain=0, release_ms=800, cutoff_hz=9000, arp_on=1, arp_div=10, arp_mode=0, arp_octaves=2, arp_gate=.5, arp_chance=.55, arp_spray=.35, delay_on=1, delay_time_ms=375, delay_feedback=.5, delay_mix=.35, delay_pingpong=1, reverb_on=1, reverb_size=.85, reverb_mix=.35),
+ 'Grouped Cascade':    dict(waveform=SAW, osc_level=.4, unison_voices=2, unison_detune=8, attack_ms=2, decay_ms=200, sustain=.3, release_ms=200, cutoff_hz=3500, resonance=.2, arp_on=1, arp_div=10, arp_mode=0, arp_octaves=2, arp_gate=.45, arp_grouping=1, delay_on=1, delay_time_ms=375, delay_feedback=.35, delay_mix=.25),
+ 'Falling Groups':     dict(waveform=TRI, osc_level=.5, attack_ms=2, decay_ms=250, sustain=.3, release_ms=250, cutoff_hz=5500, arp_on=1, arp_div=10, arp_mode=1, arp_octaves=2, arp_gate=.5, arp_grouping=3, reverb_on=1, reverb_mix=.25),
+ 'Sevens And Two':     dict(waveform=SQR, pulse_width=.42, osc_level=.35, attack_ms=2, decay_ms=220, sustain=.25, release_ms=200, cutoff_hz=3600, resonance=.22, arp_on=1, arp_div=10, arp_mode=2, arp_octaves=2, arp_gate=.5, arp_grouping=2, delay_on=1, delay_time_ms=300, delay_feedback=.3, delay_mix=.25),
+ 'Syncopated Lane':    dict(waveform=SQR, pulse_width=.4, osc_level=.4, attack_ms=1, decay_ms=200, sustain=.2, release_ms=160, cutoff_hz=3200, resonance=.3, arp_on=1, arp_div=10, arp_mode=0, arp_octaves=2, arp_gate=.5, **lane('HRHHRHRH', [1, 0, .6, .9, 0, .7, 0, .5]), delay_on=1, delay_time_ms=375, delay_feedback=.35, delay_mix=.25),
+ 'Tied Lane Pad':      dict(waveform=SAW, osc_level=.35, unison_voices=3, unison_detune=12, unison_spread=.7, attack_ms=40, decay_ms=500, sustain=.7, release_ms=500, cutoff_hz=2600, arp_on=1, arp_div=7, arp_mode=0, arp_octaves=2, arp_gate=.8, **lane('HTTHTRHT'), reverb_on=1, reverb_size=.8, reverb_mix=.35),
+ 'Spiral Waterfall':   dict(waveform=TRI, osc_level=.5, attack_ms=2, decay_ms=300, sustain=.4, release_ms=600, cutoff_hz=5000, arp_on=1, arp_div=10, arp_mode=7, arp_wshape=1, arp_octaves=2, arp_gate=.3, reverb_on=1, reverb_size=.8, reverb_mix=.3),
+ 'Geyser Chords':      dict(waveform=SAW, osc_level=.3, attack_ms=2, decay_ms=300, sustain=.4, release_ms=500, cutoff_hz=3200, resonance=.12, chord_on=1, chord_key=0, chord_scale=0, chord_type=3, arp_on=1, arp_div=10, arp_mode=7, arp_wshape=2, arp_octaves=1, arp_gate=.3, reverb_on=1, reverb_mix=.3),
+ 'Swing Triplets':     dict(waveform=SINE, osc_level=.6, attack_ms=2, decay_ms=300, sustain=.3, release_ms=300, cutoff_hz=7000, arp_on=1, arp_div=9, arp_mode=0, arp_octaves=2, arp_gate=.5, arp_swing=.5, arp_human=.3, chorus_on=1, chorus_rate_hz=.6, chorus_depth=.5, chorus_mix=.35, reverb_on=1, reverb_mix=.25),
+ 'Played Order Drift': dict(waveform=TABLE, osc_level=.5, attack_ms=2, decay_ms=300, sustain=.3, release_ms=500, cutoff_hz=5500, arp_on=1, arp_div=10, arp_mode=5, arp_order=1, arp_octaves=2, arp_gate=.6, arp_human=.7, arp_chance=.85, delay_on=1, delay_time_ms=330, delay_feedback=.4, delay_mix=.3, reverb_on=1, reverb_mix=.25),
+ # pads
+ 'Open Voicing Pad':   dict(waveform=SAW, osc_level=0.17, unison_voices=4, unison_detune=14, unison_spread=.8, attack_ms=700, decay_ms=600, sustain=.85, release_ms=1500, cutoff_hz=2400, resonance=.1, chord_on=1, chord_key=0, chord_scale=0, chord_type=4, chord_voicing=1, voice_lead=1, reverb_on=1, reverb_size=.8, reverb_mix=.35),
+ 'Lydian Glow':        dict(waveform=TRI, osc_level=0.23, unison_voices=3, unison_detune=10, unison_spread=.7, attack_ms=500, decay_ms=700, sustain=.85, release_ms=1500, cutoff_hz=3800, chord_on=1, chord_key=5, chord_scale=4, chord_type=3, chord_strum_ms=45, tape_on=1, tape_drive=.3, tape_tone=.6, tape_wobble=.25, reverb_on=1, reverb_size=.8, reverb_mix=.35),
+ 'Choir Bed':          dict(waveform=SAW, osc_level=.4, unison_voices=7, unison_detune=18, unison_spread=.9, attack_ms=800, decay_ms=700, sustain=.9, release_ms=1800, cutoff_hz=5500, talk_on=1, talk_vowel=.55, talk_reso=.6, talk_rate_hz=.15, talk_depth=.6, talk_mix=.9, reverb_on=1, reverb_size=.85, reverb_mix=.35),
+ 'Frozen Shimmer':     dict(waveform=SINE, osc_level=0.38, unison_voices=3, unison_detune=6, unison_spread=.6, attack_ms=900, decay_ms=800, sustain=.9, release_ms=2400, pdelay_on=1, pdelay_time_ms=520, pdelay_feedback=.6, pdelay_semi=12, pdelay_mix=.4, reverb_on=1, reverb_size=.95, reverb_damp=.5, reverb_mix=.45),
+ 'Spectral Mist':      dict(waveform=SAW, osc_level=.35, unison_voices=5, unison_detune=16, unison_spread=.85, attack_ms=600, decay_ms=800, sustain=.85, release_ms=1600, cutoff_hz=4500, sgate_on=1, sgate_threshold_db=-45, sgate_depth=.7, sgate_release_ms=150, sgate_mix=.9, chorus_on=1, chorus_rate_hz=.3, chorus_depth=.6, chorus_mix=.4),
+ 'Mod Wheel Pad':      dict(waveform=SAW, osc_level=.35, unison_voices=5, unison_detune=14, unison_spread=.8, attack_ms=600, decay_ms=700, sustain=.85, release_ms=1500, cutoff_hz=1200, resonance=.2, lfo1_rate_hz=.3, mod1_src=1, mod1_dst=1, mod1_amt=.25, mod2_src=4, mod2_dst=1, mod2_amt=.7, reverb_on=1, reverb_mix=.3),
+ # keys
+ 'Drop Two Keys':      dict(waveform=TRI, osc_level=.4, attack_ms=3, decay_ms=700, sustain=.4, release_ms=500, cutoff_hz=4500, chord_on=1, chord_key=7, chord_scale=0, chord_type=3, chord_voicing=2, voice_lead=1, tape_on=1, tape_drive=.35, tape_tone=.65, tape_wobble=.2, reverb_on=1, reverb_mix=.2),
+ 'Jazz Minor Nine':    dict(waveform=TRI, osc_level=.35, attack_ms=4, decay_ms=800, sustain=.35, release_ms=600, cutoff_hz=3800, chord_on=1, chord_mode=1, chord_shape=6, chorus_on=1, chorus_rate_hz=.6, chorus_depth=.45, chorus_mix=.4, reverb_on=1, reverb_mix=.25),
+ 'Wurly Tremolo':      dict(waveform=SQR, pulse_width=.3, osc_level=.4, attack_ms=3, decay_ms=500, sustain=.35, release_ms=300, cutoff_hz=2800, resonance=.1, trem_on=1, trem_rate_hz=4.5, trem_depth=.35, tape_on=1, tape_drive=.4, tape_tone=.5, tape_wobble=.15),
+ 'Detuned Upright':    dict(waveform=TABLE, osc_level=.45, attack_ms=2, decay_ms=900, sustain=.3, release_ms=500, cutoff_hz=3500, osc2_on=1, osc2_wave=TRI, osc2_oct=1, osc2_semi=0, osc2_level=.3, osc2_fine=9, lofi_on=1, lofi_tone_hz=5000, lofi_noise=.2, lofi_wobble=.35, lofi_mix=.5),
+ # leads
+ 'Vibrato Solo':       dict(waveform=SAW, osc_level=.5, unison_voices=2, unison_detune=7, attack_ms=12, decay_ms=300, sustain=.75, release_ms=300, cutoff_hz=4800, resonance=.2, lead_on=1, vib_on=1, vib_rate_hz=5.5, vib_depth_ct=22, porta_on=1, porta_ms=90, delay_on=1, delay_time_ms=420, delay_feedback=.3, delay_mix=.2),
+ 'Fifth Lead':         dict(waveform=SAW, osc_level=0.32, attack_ms=5, decay_ms=300, sustain=.7, release_ms=250, cutoff_hz=5000, resonance=.2, osc2_on=1, osc2_wave=SQR, osc2_oct=0, osc2_semi=7, osc2_level=.35, osc2_fine=4, delay_on=1, delay_time_ms=375, delay_feedback=.35, delay_mix=.2),
+ 'Wheel Square Lead':  dict(waveform=SQR, pulse_width=.5, osc_level=0.36, unison_voices=2, unison_detune=6, attack_ms=5, decay_ms=250, sustain=.7, release_ms=220, cutoff_hz=3000, resonance=.25, mod1_src=4, mod1_dst=5, mod1_amt=.8, mod2_src=4, mod2_dst=1, mod2_amt=.5),
+ 'Pitch Echo Lead':    dict(waveform=TRI, osc_level=.55, attack_ms=6, decay_ms=300, sustain=.7, release_ms=300, cutoff_hz=6000, lead_on=1, porta_on=1, porta_ms=60, pdelay_on=1, pdelay_time_ms=380, pdelay_feedback=.45, pdelay_semi=7, pdelay_mix=.35),
+ # bass
+ 'Two Octave Bass':    dict(waveform=SAW, voices=1, osc_level=.5, attack_ms=2, decay_ms=200, sustain=.8, release_ms=110, cutoff_hz=700, resonance=.2, osc2_on=1, osc2_wave=SINE, osc2_oct=-1, osc2_semi=0, osc2_level=.9, osc2_fine=0, comp_on=1, comp_threshold_db=-18, comp_ratio=3),
+ 'Lo-Fi Bass':         dict(waveform=TRI, voices=1, osc_level=.7, attack_ms=3, decay_ms=250, sustain=.7, release_ms=140, cutoff_hz=1200, lofi_on=1, lofi_tone_hz=3000, lofi_noise=.25, lofi_wobble=.4, lofi_mix=.7, comp_on=1, comp_threshold_db=-18, comp_ratio=3),
+ 'Envelope Filter Bass': dict(waveform=SAW, voices=1, osc_level=.5, attack_ms=2, decay_ms=300, sustain=.8, release_ms=120, cutoff_hz=250, resonance=.45, menv1_attack_ms=2, menv1_decay_ms=260, menv1_sustain=.2, menv1_release_ms=150, mod1_src=5, mod1_dst=1, mod1_amt=.75),
+ 'OTT Punch Bass':     dict(waveform=SAW, voices=1, osc_level=.45, attack_ms=2, decay_ms=200, sustain=.8, release_ms=100, cutoff_hz=900, resonance=.25, ott_on=1, ott_depth=.55, ott_time=.4, ott_mix=.6),
+ # plucks and bells
+ 'Music Box':          dict(waveform=BELL, osc_level=.5, attack_ms=1, decay_ms=600, sustain=0, release_ms=700, cutoff_hz=9000, reverb_on=1, reverb_size=.7, reverb_damp=.4, reverb_mix=.3, delay_on=1, delay_time_ms=330, delay_feedback=.3, delay_mix=.15),
+ 'Kalimba':            dict(waveform=PLUCK, pulse_width=.4, osc_level=0.78, attack_ms=1, decay_ms=500, sustain=0, release_ms=500, cutoff_hz=4800, chorus_on=1, chorus_rate_hz=.4, chorus_depth=.35, chorus_mix=.3, reverb_on=1, reverb_mix=.2),
+ 'Marimba Wood':       dict(waveform=SINE, osc_level=.6, attack_ms=1, decay_ms=380, sustain=0, release_ms=260, cutoff_hz=5500, osc2_on=1, osc2_wave=SINE, osc2_oct=2, osc2_semi=0, osc2_level=.25, osc2_fine=0, tape_on=1, tape_drive=.25, tape_tone=.55, tape_wobble=.1, reverb_on=1, reverb_size=.5, reverb_mix=.15),
+ # fx and ambient
+ 'Tide Drone':         dict(waveform=SAW, osc_level=.3, unison_voices=5, unison_detune=34, unison_spread=.85, attack_ms=1500, decay_ms=1500, sustain=1.0, release_ms=3000, cutoff_hz=500, resonance=.3, lfo1_rate_hz=.12, mod1_src=1, mod1_dst=1, mod1_amt=.5, reverb_on=1, reverb_size=.95, reverb_mix=.45),
+ 'Glass Rain':         dict(waveform=BELL, osc_level=0.62, attack_ms=1, decay_ms=500, sustain=0, release_ms=900, cutoff_hz=10000, pdelay_on=1, pdelay_time_ms=330, pdelay_feedback=.55, pdelay_semi=12, pdelay_mix=.4, reverb_on=1, reverb_size=.9, reverb_mix=.4),
+ 'Robot Choir':        dict(waveform=SAW, osc_level=0.5, unison_voices=5, unison_detune=12, unison_spread=.8, attack_ms=40, decay_ms=400, sustain=.8, release_ms=500, cutoff_hz=6500, talk_on=1, talk_vowel=.5, talk_reso=.8, talk_rate_hz=2.4, talk_depth=.9, talk_mix=1.0, delay_on=1, delay_time_ms=300, delay_feedback=.3, delay_mix=.2),
+ 'Underwater':         dict(waveform=TRI, osc_level=.45, unison_voices=3, unison_detune=14, unison_spread=.8, attack_ms=700, decay_ms=900, sustain=.85, release_ms=2000, cutoff_hz=700, resonance=.3, flanger_on=1, flanger_rate_hz=.12, flanger_depth=.8, flanger_feedback=.5, flanger_mix=.5, lofi_on=1, lofi_tone_hz=2500, lofi_noise=.1, lofi_wobble=.5, lofi_mix=.6),
+ 'Cassette Dream':     dict(waveform=TRI, osc_level=.4, unison_voices=3, unison_detune=10, attack_ms=300, decay_ms=900, sustain=.7, release_ms=1200, cutoff_hz=3000, lofi_on=1, lofi_tone_hz=3500, lofi_noise=.4, lofi_wobble=.55, lofi_mix=.8, tape_on=1, tape_drive=.4, tape_tone=.5, tape_wobble=.35, reverb_on=1, reverb_mix=.3),
+ 'Wind Chimes':        dict(waveform=BELL, osc_level=0.75, attack_ms=1, decay_ms=900, sustain=0, release_ms=1600, cutoff_hz=11000, arp_on=1, arp_div=4, arp_mode=4, arp_octaves=3, arp_gate=.5, arp_chance=.72, arp_spray=.3, delay_on=1, delay_time_ms=420, delay_feedback=.5, delay_mix=.35, delay_pingpong=1, reverb_on=1, reverb_size=.9, reverb_mix=.45),
+})
+
 # Browser category of each factory preset. Keep this list to the categories the plugin knows (presetCategories() in PluginProcessor.h).
 CATEGORY = {
     'Auto Pan Pad': 'Pads',
@@ -126,6 +187,47 @@ CATEGORY = {
     'Spectral Sparkle': 'FX & Ambient',
     'Digital Rain': 'FX & Ambient',
     'Sweep Machine': 'FX & Ambient',
+    'Two Hand Climb': 'Arps',
+    'Two Hand Waterfall': 'Arps',
+    'Chance Pluck': 'Arps',
+    'Spray Harp': 'Arps',
+    'Scatter Bells': 'Arps',
+    'Grouped Cascade': 'Arps',
+    'Falling Groups': 'Arps',
+    'Sevens And Two': 'Arps',
+    'Syncopated Lane': 'Arps',
+    'Tied Lane Pad': 'Arps',
+    'Spiral Waterfall': 'Arps',
+    'Geyser Chords': 'Arps',
+    'Swing Triplets': 'Arps',
+    'Played Order Drift': 'Arps',
+    'Open Voicing Pad': 'Pads',
+    'Lydian Glow': 'Pads',
+    'Choir Bed': 'Pads',
+    'Frozen Shimmer': 'Pads',
+    'Spectral Mist': 'Pads',
+    'Mod Wheel Pad': 'Pads',
+    'Drop Two Keys': 'Keys',
+    'Jazz Minor Nine': 'Keys',
+    'Wurly Tremolo': 'Keys',
+    'Detuned Upright': 'Keys',
+    'Vibrato Solo': 'Leads',
+    'Fifth Lead': 'Leads',
+    'Wheel Square Lead': 'Leads',
+    'Pitch Echo Lead': 'Leads',
+    'Two Octave Bass': 'Bass',
+    'Lo-Fi Bass': 'Bass',
+    'Envelope Filter Bass': 'Bass',
+    'OTT Punch Bass': 'Bass',
+    'Music Box': 'Plucks & Bells',
+    'Kalimba': 'Plucks & Bells',
+    'Marimba Wood': 'Plucks & Bells',
+    'Tide Drone': 'FX & Ambient',
+    'Glass Rain': 'FX & Ambient',
+    'Robot Choir': 'FX & Ambient',
+    'Underwater': 'FX & Ambient',
+    'Cassette Dream': 'FX & Ambient',
+    'Wind Chimes': 'FX & Ambient',
 }
 assert set(CATEGORY) == set(P), (set(P) ^ set(CATEGORY))
 import re as _re

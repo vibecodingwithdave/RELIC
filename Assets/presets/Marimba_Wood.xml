@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Marimba Wood" author="Relic" category="Plucks &amp; Bells">
+  <PARAM id="waveform" value="0.0"/>
+  <PARAM id="osc_level" value="0.6"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="380.0"/>
+  <PARAM id="sustain" value="0.0"/>
+  <PARAM id="release_ms" value="260.0"/>
+  <PARAM id="cutoff_hz" value="5500.0"/>
+  <PARAM id="osc2_on" value="1.0"/>
+  <PARAM id="osc2_wave" value="0.0"/>
+  <PARAM id="osc2_oct" value="2.0"/>
+  <PARAM id="osc2_semi" value="0.0"/>
+  <PARAM id="osc2_level" value="0.25"/>
+  <PARAM id="osc2_fine" value="0.0"/>
+  <PARAM id="tape_on" value="1.0"/>
+  <PARAM id="tape_drive" value="0.25"/>
+  <PARAM id="tape_tone" value="0.55"/>
+  <PARAM id="tape_wobble" value="0.1"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.5"/>
+  <PARAM id="reverb_mix" value="0.15"/>
+</STATE>

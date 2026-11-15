@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Lo-Fi Bass" author="Relic" category="Bass">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="voices" value="1.0"/>
+  <PARAM id="osc_level" value="0.7"/>
+  <PARAM id="attack_ms" value="3.0"/>
+  <PARAM id="decay_ms" value="250.0"/>
+  <PARAM id="sustain" value="0.7"/>
+  <PARAM id="release_ms" value="140.0"/>
+  <PARAM id="cutoff_hz" value="1200.0"/>
+  <PARAM id="lofi_on" value="1.0"/>
+  <PARAM id="lofi_tone_hz" value="3000.0"/>
+  <PARAM id="lofi_noise" value="0.25"/>
+  <PARAM id="lofi_wobble" value="0.4"/>
+  <PARAM id="lofi_mix" value="0.7"/>
+  <PARAM id="comp_on" value="1.0"/>
+  <PARAM id="comp_threshold_db" value="-18.0"/>
+  <PARAM id="comp_ratio" value="3.0"/>
+</STATE>

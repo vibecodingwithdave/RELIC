@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="OTT Punch Bass" author="Relic" category="Bass">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="voices" value="1.0"/>
+  <PARAM id="osc_level" value="0.45"/>
+  <PARAM id="attack_ms" value="2.0"/>
+  <PARAM id="decay_ms" value="200.0"/>
+  <PARAM id="sustain" value="0.8"/>
+  <PARAM id="release_ms" value="100.0"/>
+  <PARAM id="cutoff_hz" value="900.0"/>
+  <PARAM id="resonance" value="0.25"/>
+  <PARAM id="ott_on" value="1.0"/>
+  <PARAM id="ott_depth" value="0.55"/>
+  <PARAM id="ott_time" value="0.4"/>
+  <PARAM id="ott_mix" value="0.6"/>
+</STATE>

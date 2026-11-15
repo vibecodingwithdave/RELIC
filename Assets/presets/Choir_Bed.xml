@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Choir Bed" author="Relic" category="Pads">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="osc_level" value="0.4"/>
+  <PARAM id="unison_voices" value="7.0"/>
+  <PARAM id="unison_detune" value="18.0"/>
+  <PARAM id="unison_spread" value="0.9"/>
+  <PARAM id="attack_ms" value="800.0"/>
+  <PARAM id="decay_ms" value="700.0"/>
+  <PARAM id="sustain" value="0.9"/>
+  <PARAM id="release_ms" value="1800.0"/>
+  <PARAM id="cutoff_hz" value="5500.0"/>
+  <PARAM id="talk_on" value="1.0"/>
+  <PARAM id="talk_vowel" value="0.55"/>
+  <PARAM id="talk_reso" value="0.6"/>
+  <PARAM id="talk_rate_hz" value="0.15"/>
+  <PARAM id="talk_depth" value="0.6"/>
+  <PARAM id="talk_mix" value="0.9"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.85"/>
+  <PARAM id="reverb_mix" value="0.35"/>
+</STATE>

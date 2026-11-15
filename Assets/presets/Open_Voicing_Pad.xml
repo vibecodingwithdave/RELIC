@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Open Voicing Pad" author="Relic" category="Pads">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="osc_level" value="0.17"/>
+  <PARAM id="unison_voices" value="4.0"/>
+  <PARAM id="unison_detune" value="14.0"/>
+  <PARAM id="unison_spread" value="0.8"/>
+  <PARAM id="attack_ms" value="700.0"/>
+  <PARAM id="decay_ms" value="600.0"/>
+  <PARAM id="sustain" value="0.85"/>
+  <PARAM id="release_ms" value="1500.0"/>
+  <PARAM id="cutoff_hz" value="2400.0"/>
+  <PARAM id="resonance" value="0.1"/>
+  <PARAM id="chord_on" value="1.0"/>
+  <PARAM id="chord_key" value="0.0"/>
+  <PARAM id="chord_scale" value="0.0"/>
+  <PARAM id="chord_type" value="4.0"/>
+  <PARAM id="chord_voicing" value="1.0"/>
+  <PARAM id="voice_lead" value="1.0"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.8"/>
+  <PARAM id="reverb_mix" value="0.35"/>
+</STATE>

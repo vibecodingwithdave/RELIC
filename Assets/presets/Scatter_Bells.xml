@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Scatter Bells" author="Relic" category="Arps">
+  <PARAM id="waveform" value="6.0"/>
+  <PARAM id="osc_level" value="0.7"/>
+  <PARAM id="attack_ms" value="1.0"/>
+  <PARAM id="decay_ms" value="500.0"/>
+  <PARAM id="sustain" value="0.0"/>
+  <PARAM id="release_ms" value="800.0"/>
+  <PARAM id="cutoff_hz" value="9000.0"/>
+  <PARAM id="arp_on" value="1.0"/>
+  <PARAM id="arp_div" value="10.0"/>
+  <PARAM id="arp_mode" value="0.0"/>
+  <PARAM id="arp_octaves" value="2.0"/>
+  <PARAM id="arp_gate" value="0.5"/>
+  <PARAM id="arp_chance" value="0.55"/>
+  <PARAM id="arp_spray" value="0.35"/>
+  <PARAM id="delay_on" value="1.0"/>
+  <PARAM id="delay_time_ms" value="375.0"/>
+  <PARAM id="delay_feedback" value="0.5"/>
+  <PARAM id="delay_mix" value="0.35"/>
+  <PARAM id="delay_pingpong" value="1.0"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_size" value="0.85"/>
+  <PARAM id="reverb_mix" value="0.35"/>
+</STATE>

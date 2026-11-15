@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Drop Two Keys" author="Relic" category="Keys">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="osc_level" value="0.4"/>
+  <PARAM id="attack_ms" value="3.0"/>
+  <PARAM id="decay_ms" value="700.0"/>
+  <PARAM id="sustain" value="0.4"/>
+  <PARAM id="release_ms" value="500.0"/>
+  <PARAM id="cutoff_hz" value="4500.0"/>
+  <PARAM id="chord_on" value="1.0"/>
+  <PARAM id="chord_key" value="7.0"/>
+  <PARAM id="chord_scale" value="0.0"/>
+  <PARAM id="chord_type" value="3.0"/>
+  <PARAM id="chord_voicing" value="2.0"/>
+  <PARAM id="voice_lead" value="1.0"/>
+  <PARAM id="tape_on" value="1.0"/>
+  <PARAM id="tape_drive" value="0.35"/>
+  <PARAM id="tape_tone" value="0.65"/>
+  <PARAM id="tape_wobble" value="0.2"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_mix" value="0.2"/>
+</STATE>

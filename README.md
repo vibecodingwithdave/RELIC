@@ -3,7 +3,7 @@
 An original polyphonic synth plugin (VST3, AU, Standalone) built with JUCE 8.
 
 ## Status: milestone 3
-Presets: a browser (PRESETS icon or click the name bar), prev/next arrows, SAVE, INIT, and 59 original factory presets. Presets are small XML files in `~/Library/Relic/Presets/` (Factory, User, Imported). An output safety stage keeps hot presets from clipping.
+Presets: a browser (PRESETS icon or click the name bar), prev/next arrows, SAVE, INIT, and 100 original factory presets (pads, keys, leads, bass, plucks and bells, arps, FX and ambient; many show off the arp, chord and effect features). Presets are small XML files in `~/Library/Relic/Presets/` (Factory, User, Imported). An output safety stage keeps hot presets from clipping.
 
 CRAFT, CHAOS, UNDO, REDO, LOCK FX: CRAFT picks a sound style (pad, pluck, lead, bass or keys) and builds a coherent patch for it: matching envelope and filter, consonant extra oscillators (unison, octaves, a fifth, gently detuned), a clean modulation matrix with at most one slow gentle movement, and one or two of reverb, chorus, delay (in time with the host tempo) or tape. It never switches on crusher, lo-fi, OTT, talk box, spectral gate, pitch delay or wah, and it levels each style so chords stay clear of the limiter. CHAOS rolls everything wider, including the mod matrix, but avoids silent corners. Both keep master, voice count, the sample, chops, chords, arp, lead, glide and vibrato. LOCK FX leaves every effect alone when you roll. UNDO and REDO step through up to 100 recorded states (an edit counts once you stop moving a control for about a fifth of a second); loading a sample is not part of the history.
 

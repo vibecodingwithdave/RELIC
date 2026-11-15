@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Jazz Minor Nine" author="Relic" category="Keys">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="osc_level" value="0.35"/>
+  <PARAM id="attack_ms" value="4.0"/>
+  <PARAM id="decay_ms" value="800.0"/>
+  <PARAM id="sustain" value="0.35"/>
+  <PARAM id="release_ms" value="600.0"/>
+  <PARAM id="cutoff_hz" value="3800.0"/>
+  <PARAM id="chord_on" value="1.0"/>
+  <PARAM id="chord_mode" value="1.0"/>
+  <PARAM id="chord_shape" value="6.0"/>
+  <PARAM id="chorus_on" value="1.0"/>
+  <PARAM id="chorus_rate_hz" value="0.6"/>
+  <PARAM id="chorus_depth" value="0.45"/>
+  <PARAM id="chorus_mix" value="0.4"/>
+  <PARAM id="reverb_on" value="1.0"/>
+  <PARAM id="reverb_mix" value="0.25"/>
+</STATE>

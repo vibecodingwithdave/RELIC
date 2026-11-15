@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Pitch Echo Lead" author="Relic" category="Leads">
+  <PARAM id="waveform" value="3.0"/>
+  <PARAM id="osc_level" value="0.55"/>
+  <PARAM id="attack_ms" value="6.0"/>
+  <PARAM id="decay_ms" value="300.0"/>
+  <PARAM id="sustain" value="0.7"/>
+  <PARAM id="release_ms" value="300.0"/>
+  <PARAM id="cutoff_hz" value="6000.0"/>
+  <PARAM id="lead_on" value="1.0"/>
+  <PARAM id="porta_on" value="1.0"/>
+  <PARAM id="porta_ms" value="60.0"/>
+  <PARAM id="pdelay_on" value="1.0"/>
+  <PARAM id="pdelay_time_ms" value="380.0"/>
+  <PARAM id="pdelay_feedback" value="0.45"/>
+  <PARAM id="pdelay_semi" value="7.0"/>
+  <PARAM id="pdelay_mix" value="0.35"/>
+</STATE>

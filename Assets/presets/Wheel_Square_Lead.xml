@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Wheel Square Lead" author="Relic" category="Leads">
+  <PARAM id="waveform" value="2.0"/>
+  <PARAM id="pulse_width" value="0.5"/>
+  <PARAM id="osc_level" value="0.36"/>
+  <PARAM id="unison_voices" value="2.0"/>
+  <PARAM id="unison_detune" value="6.0"/>
+  <PARAM id="attack_ms" value="5.0"/>
+  <PARAM id="decay_ms" value="250.0"/>
+  <PARAM id="sustain" value="0.7"/>
+  <PARAM id="release_ms" value="220.0"/>
+  <PARAM id="cutoff_hz" value="3000.0"/>
+  <PARAM id="resonance" value="0.25"/>
+  <PARAM id="mod1_src" value="4.0"/>
+  <PARAM id="mod1_dst" value="5.0"/>
+  <PARAM id="mod1_amt" value="0.8"/>
+  <PARAM id="mod2_src" value="4.0"/>
+  <PARAM id="mod2_dst" value="1.0"/>
+  <PARAM id="mod2_amt" value="0.5"/>
+</STATE>

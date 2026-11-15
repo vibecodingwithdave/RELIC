@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<STATE presetName="Spectral Mist" author="Relic" category="Pads">
+  <PARAM id="waveform" value="1.0"/>
+  <PARAM id="osc_level" value="0.35"/>
+  <PARAM id="unison_voices" value="5.0"/>
+  <PARAM id="unison_detune" value="16.0"/>
+  <PARAM id="unison_spread" value="0.85"/>
+  <PARAM id="attack_ms" value="600.0"/>
+  <PARAM id="decay_ms" value="800.0"/>
+  <PARAM id="sustain" value="0.85"/>
+  <PARAM id="release_ms" value="1600.0"/>
+  <PARAM id="cutoff_hz" value="4500.0"/>
+  <PARAM id="sgate_on" value="1.0"/>
+  <PARAM id="sgate_threshold_db" value="-45.0"/>
+  <PARAM id="sgate_depth" value="0.7"/>
+  <PARAM id="sgate_release_ms" value="150.0"/>
+  <PARAM id="sgate_mix" value="0.9"/>
+  <PARAM id="chorus_on" value="1.0"/>
+  <PARAM id="chorus_rate_hz" value="0.3"/>
+  <PARAM id="chorus_depth" value="0.6"/>
+  <PARAM id="chorus_mix" value="0.4"/>
+</STATE>
