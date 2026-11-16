@@ -141,12 +141,14 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
         flt (t + "_rate_hz", "LFO " + juce::String (n) + " Rate Hz", 0.05f, 20.0f, n == 1 ? 2.0f : 0.5f, 0.5f);
         choice (t + "_sync", "LFO " + juce::String (n) + " Sync", { "Free", "1/1", "1/2", "1/4", "1/8", "1/16" }, 0);
     }
-    for (int n = 1; n <= 4; ++n)
+    for (int n = 1; n <= 8; ++n)       // slots 5 to 8, the extra sources and targets, Curve and Range are newer; the order of the older choices never changes
     {
         const juce::String t = "mod" + juce::String (n);
-        choice (t + "_src", "Mod " + juce::String (n) + " Source", { "None", "LFO 1", "LFO 2", "Velocity", "Mod Wheel", "Env 1", "Env 2", "XY X", "XY Y", "Macro 1", "Macro 2" }, 0);
-        choice (t + "_dst", "Mod " + juce::String (n) + " Destination", { "None", "Cutoff", "Resonance", "Pitch", "Level", "Pulse Width" }, 0);
+        choice (t + "_src", "Mod " + juce::String (n) + " Source", { "None", "LFO 1", "LFO 2", "Velocity", "Mod Wheel", "Env 1", "Env 2", "XY X", "XY Y", "Macro 1", "Macro 2", "Key Track", "Random" }, 0);
+        choice (t + "_dst", "Mod " + juce::String (n) + " Destination", { "None", "Cutoff", "Resonance", "Pitch", "Level", "Pulse Width", "Pan", "Texture Level", "Texture Position", "Sample Level" }, 0);
         flt (t + "_amt", "Mod " + juce::String (n) + " Amount", -1.0f, 1.0f, 0.0f);
+        flt (t + "_curve", "Mod " + juce::String (n) + " Curve", -1.0f, 1.0f, 0.0f);
+        choice (t + "_range", "Mod " + juce::String (n) + " Range", { "Full", "Positive", "Negative" }, 0);
     }
     toggle ("vib_on", "Vibrato On", false);
     flt ("vib_rate_hz", "Vibrato Rate Hz", 0.5f, 10.0f, 5.5f);
@@ -626,6 +628,7 @@ void RelicProcessor::noteOn (int note, float vel)
     else vo.sampleActiveB = false;
     for (auto& g : vo.grains) g.on = false;
     vo.grainTimer = 0.0f; vo.gseed = (unsigned int) (counter * 2654435761u + (unsigned int) note * 40503u + 1u);
+    vo.modRand = (float) (((vo.gseed * 1664525u + 1013904223u) >> 8) & 0xFFFFFFu) / 8388608.0f - 1.0f;   // the Random source: one value per note, -1 to 1
     { vo.nseed = vo.gseed * 1664525u + 1013904223u; const double D = std::min (8000.0, sr / vo.baseHz); vo.ksLp = 0.0f; vo.ksPos = 0;
       for (int i = 0; i < 8192; ++i) { vo.nseed = vo.nseed * 1664525u + 1013904223u; vo.ks[i] = i >= 8192 - (int) D ? ((vo.nseed >> 8) / 8388608.0f - 1.0f) * 0.7f : 0.0f; }   // the burst sits just behind the write position
       for (int k = 0; k < 6; ++k) { vo.bellAmp[k] = 1.0f; vo.phase[k] = 0.0; } }
@@ -751,14 +754,16 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
     const float normEff = shape >= 5 ? 1.0f : norm;
 
     // ---- modulation: LFOs for this chunk, then the active matrix slots ----
-    static const char* srcIds[4] = { "mod1_src", "mod2_src", "mod3_src", "mod4_src" };
-    static const char* dstIds[4] = { "mod1_dst", "mod2_dst", "mod3_dst", "mod4_dst" };
-    static const char* amtIds[4] = { "mod1_amt", "mod2_amt", "mod3_amt", "mod4_amt" };
-    struct Slot { int src, dst; float amt; } slots[4]; int nSlots = 0; bool fMod = false;
-    for (int k = 0; k < 4; ++k)
+    struct Slot { int src, dst, range; float amt, curveP; } slots[8]; int nSlots = 0; bool fMod = false;
+    for (int k = 0; k < 8; ++k)
     {
-        const int sc = (int) p (srcIds[k])->load(), ds = (int) p (dstIds[k])->load(); const float am = p (amtIds[k])->load();
-        if (sc > 0 && ds > 0 && am != 0.0f) { slots[nSlots++] = { sc, ds, am }; fMod |= (ds == 1 || ds == 2); }
+        const juce::String t = "mod" + juce::String (k + 1);
+        const int sc = (int) p ((t + "_src").toRawUTF8())->load(), ds = (int) p ((t + "_dst").toRawUTF8())->load(); const float am = p ((t + "_amt").toRawUTF8())->load();
+        if (sc > 0 && ds > 0 && am != 0.0f)
+        {
+            const float cv = p ((t + "_curve").toRawUTF8())->load();       // bend: above 0 starts slowly, below 0 starts fast
+            slots[nSlots++] = { sc, ds, (int) p ((t + "_range").toRawUTF8())->load(), am, cv == 0.0f ? 1.0f : std::exp2 (2.0f * cv) }; fMod |= (ds == 1 || ds == 2);
+        }
     }
     const float ctl[4] = { p ("xy_x")->load(), p ("xy_y")->load(), p ("macro_1")->load(), p ("macro_2")->load() };
     bool useEnv[2] = { false, false };
@@ -802,7 +807,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
         if (texFiltOn) { vo.ftl.setup (texCut, texQ, sr); vo.ftr.setup (texCut, texQ, sr); }
         for (int i = 0; i < n; ++i)
         {
-            float mc = 0, mr = 0, mp = 0, ml = 0, mw = 0, ev[2] = { 0.0f, 0.0f };
+            float mc = 0, mr = 0, mp = 0, ml = 0, mw = 0, mpn = 0, mtl = 0, mtp = 0, msl = 0, ev[2] = { 0.0f, 0.0f };
             for (int k = 0; k < 2; ++k) if (useEnv[k])
             {
                 if (vo.env.stage == rf::Adsr::Release && vo.menv[k].stage != rf::Adsr::Release && vo.menv[k].stage != rf::Adsr::Idle) vo.menv[k].noteOff();
@@ -816,8 +821,13 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             for (int k = 0; k < nSlots; ++k)
             {
                 const int sc = slots[k].src;
-                const float v = slots[k].amt * (sc == 1 ? lfoBuf[0][i] : sc == 2 ? lfoBuf[1][i] : sc == 3 ? vo.velocity : sc == 4 ? wheel : sc <= 6 ? ev[sc - 5] : ctl[sc - 7]);
-                switch (slots[k].dst) { case 1: mc += v; break; case 2: mr += v; break; case 3: mp += v; break; case 4: ml += v; break; default: mw += v; break; }
+                float x = sc == 1 ? lfoBuf[0][i] : sc == 2 ? lfoBuf[1][i] : sc == 3 ? vo.velocity : sc == 4 ? wheel : sc <= 6 ? ev[sc - 5] : sc <= 10 ? ctl[sc - 7]
+                        : sc == 11 ? juce::jlimit (-1.0f, 1.0f, ((float) vo.note - 60.0f) / 24.0f) : vo.modRand;
+                if (slots[k].range == 1) x = std::max (0.0f, x); else if (slots[k].range == 2) x = std::min (0.0f, x);
+                if (slots[k].curveP != 1.0f) x = std::copysign (std::pow (std::abs (x), slots[k].curveP), x);
+                const float v = slots[k].amt * x;
+                switch (slots[k].dst) { case 1: mc += v; break; case 2: mr += v; break; case 3: mp += v; break; case 4: ml += v; break; case 5: mw += v; break;
+                                        case 6: mpn += v; break; case 7: mtl += v; break; case 8: mtp += v; break; default: msl += v; break; }
             }
             if (fOn && fMod && (i & 7) == 0)
             {
@@ -953,6 +963,8 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                     else if (vo.samplePosB <= rgB.revFloor) vo.sampleActiveB = false;
                 }
             }
+            if (msl != 0.0f) { const float sf = juce::jlimit (0.0f, 2.0f, 1.0f + msl); pl *= sf; pr *= sf; }      // the Sample Level target (samples only, not the texture)
+            const float texMod = mtl != 0.0f ? juce::jlimit (0.0f, 2.0f, 1.0f + mtl) : 1.0f;
             if (texOn && ! vo.chop && vo.zone != 2)
             {
                 const int nn = tsmp->frames();
@@ -965,7 +977,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                     for (auto& g : vo.grains) if (! g.on)
                     {
                         g.on = true; g.age = 0; g.len = std::max (64, (int) (texSize * 0.001 * sr));
-                        g.pos = (float) juce::jlimit (0.0, nTex - 2.0, (double) (texPos + (r2 * 2.0f - 1.0f) * texSpread * 0.5f) * nTex);
+                        g.pos = (float) juce::jlimit (0.0, nTex - 2.0, (double) (juce::jlimit (0.0f, 1.0f, texPos + 0.5f * mtp) + (r2 * 2.0f - 1.0f) * texSpread * 0.5f) * nTex);
                         g.step = (float) (std::pow (2.0, ((double) vo.note - texRoot) / 12.0 + (double) ((r3 * 2.0f - 1.0f) * texJit / 1200.0f)) * texRate * pf * texTuneMul);
                         const float a = (1.0f + (r1 * 2.0f - 1.0f) * 0.6f) * (float) (rf::kPi / 4.0); g.gl = std::cos (a) * 1.41421356f; g.gr = std::sin (a) * 1.41421356f;
                         break;
@@ -974,7 +986,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                 for (auto& g : vo.grains) if (g.on)
                 {
                     const float wgt = 0.5f - 0.5f * std::cos (2.0f * (float) rf::kPi * (float) g.age / (float) g.len) ;
-                    const float xl = cubic (tsmp->L, g.pos, nn) * wgt * g.gl * texGain * vo.velocity * et, xr = cubic (tsmp->R, g.pos, nn) * wgt * g.gr * texGain * vo.velocity * et;
+                    const float xl = cubic (tsmp->L, g.pos, nn) * wgt * g.gl * texGain * vo.velocity * et * texMod, xr = cubic (tsmp->R, g.pos, nn) * wgt * g.gr * texGain * vo.velocity * et * texMod;
                     if (texSep) { tl += xl; tr += xr; } else { pl += xl; pr += xr; }
                     g.pos += g.step; if (++g.age >= g.len || g.pos >= (float) nn - 2.0f) g.on = false;
                 }
@@ -1002,6 +1014,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             }
             else { l += pl; r += pr; }
             l += dtl; r += dtr;       // the dry texture bypasses the voice filter
+            if (mpn != 0.0f) { const float a = (juce::jlimit (-1.0f, 1.0f, mpn) + 1.0f) * (float) (rf::kPi / 4.0); l *= std::cos (a) * 1.41421356f; r *= std::sin (a) * 1.41421356f; }   // Pan target
             const float e = vo.env.next (aMs, dMs, sus, rMs, sr);
             L[i] += l * e; R[i] += r * e;
         }

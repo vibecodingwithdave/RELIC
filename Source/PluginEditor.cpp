@@ -390,11 +390,19 @@ RelicEditor::RelicEditor (RelicProcessor& p)
         addStepper ((t + "_shape").toRawUTF8(), "Shape", modGroup); addStepper ((t + "_sync").toRawUTF8(), "Sync", modGroup);
         modGroup.push_back (addKnob ((t + "_rate_hz").toRawUTF8(), "Rate"));
     }
-    for (int n = 1; n <= 4; ++n)
+    for (int n = 1; n <= 8; ++n)
     {
         const juce::String t = "mod" + juce::String (n);
-        addStepper ((t + "_src").toRawUTF8(), "Source", modGroup); addStepper ((t + "_dst").toRawUTF8(), "Target", modGroup);
-        amountSliders.push_back (std::make_unique<ui::AmountSlider> (proc.apvts, t + "_amt", "AMOUNT")); amountSliders.back()->setTooltip (help::forId (t + "_amt")); addAndMakeVisible (*amountSliders.back()); modGroup.push_back (amountSliders.back().get());
+        addStepper ((t + "_src").toRawUTF8(), "Source", modGroup); addStepper ((t + "_dst").toRawUTF8(), "Target", modGroup); addStepper ((t + "_range").toRawUTF8(), "Range", modGroup);
+        for (auto k : { std::make_pair ("_amt", "AMOUNT"), { "_curve", "CURVE" } })
+        {
+            amountSliders.push_back (std::make_unique<ui::AmountSlider> (proc.apvts, t + k.first, k.second)); amountSliders.back()->setTooltip (help::forId (t + k.first)); addAndMakeVisible (*amountSliders.back()); modGroup.push_back (amountSliders.back().get());
+        }
+    }
+    for (int i = 0; i < 2; ++i)
+    {
+        modPageBtn[i] = std::make_unique<ui::StoneButton> (i == 0 ? "SLOTS 1-4" : "SLOTS 5-8", true, false); modPageBtn[i]->textScale = 0.34f; modPageBtn[i]->setTooltip (help::forName ("SLOTS"));
+        modPageBtn[i]->onClick = [this, i] { modPage = i; updateModView(); }; addAndMakeVisible (*modPageBtn[i]); modGroup.push_back (modPageBtn[i].get());
     }
     addNoteToggle ("vib_on", "VIB", 0.42f); addNoteToggle ("porta_on", "PORTA", 0.38f);
     for (auto id : { "lfo1_keysync", "lfo2_keysync" }) modGroup.push_back (addNoteToggle (id, "KEY SYNC", 0.36f));
@@ -561,6 +569,19 @@ void RelicEditor::updateSamplerView()
     sampDisp->setSlot (sampSlot);
 }
 
+void RelicEditor::updateModView()
+{
+    if (modPageBtn[0] == nullptr) return;
+    const bool on = currentTab == 7;
+    for (int n = 1; n <= 8; ++n)
+    {
+        const bool show = on && (n <= 4) == (modPage == 0); const juce::String t = "mod" + juce::String (n);
+        steppers[(t + "_src").toRawUTF8()]->setVisible (show); steppers[(t + "_dst").toRawUTF8()]->setVisible (show); steppers[(t + "_range").toRawUTF8()]->setVisible (show);
+        amountSliders[(size_t) (2 * (n - 1))]->setVisible (show); amountSliders[(size_t) (2 * (n - 1) + 1)]->setVisible (show);
+    }
+    for (int i = 0; i < 2; ++i) modPageBtn[i]->setToggleState (i == modPage, juce::dontSendNotification);
+}
+
 void RelicEditor::updateTextureView()
 {
     if (currentTab != 11 || texViewBtn[0] == nullptr) return;
@@ -584,6 +605,7 @@ void RelicEditor::setTab (int t)
     for (auto* c : arpGroup) c->setVisible (t == 5);
     for (auto* c : chordGroup) c->setVisible (t == 6);
     for (auto* c : modGroup) c->setVisible (t == 7);
+    updateModView();
     for (auto* c : osc23Group) c->setVisible (t == 8);
     for (auto* c : envGroup) c->setVisible (t == 9);
     for (auto* c : fx4Group) c->setVisible (t == 10);
@@ -865,11 +887,12 @@ void RelicEditor::resized()
         K ((t + "_rate_hz").toRawUTF8())->setBounds (R (x0 + 10, 264, 92, 84));
         noteToggles[t + "_keysync"]->setBounds (R (x0 + 150, 286, 150, 40));
     }
-    for (int n = 1; n <= 4; ++n)
+    modPageBtn[0]->setBounds (R (558, 356, 130, 32)); modPageBtn[1]->setBounds (R (696, 356, 130, 32));
+    for (int n = 1; n <= 8; ++n)
     {
-        const juce::String t = "mod" + juce::String (n); const float y = 394 + (n - 1) * 60.0f;
-        steppers[(t + "_src").toRawUTF8()]->setBounds (R (558, y, 200, 56)); steppers[(t + "_dst").toRawUTF8()]->setBounds (R (766, y, 220, 56));
-        amountSliders[(size_t) (n - 1)]->setBounds (R (996, y + 4, 266, 50));
+        const juce::String t = "mod" + juce::String (n); const float y = 394 + ((n - 1) % 4) * 60.0f;
+        steppers[(t + "_src").toRawUTF8()]->setBounds (R (554, y, 150, 56)); steppers[(t + "_dst").toRawUTF8()]->setBounds (R (708, y, 160, 56)); steppers[(t + "_range").toRawUTF8()]->setBounds (R (872, y, 100, 56));
+        amountSliders[(size_t) (2 * (n - 1))]->setBounds (R (978, y + 4, 160, 50)); amountSliders[(size_t) (2 * (n - 1) + 1)]->setBounds (R (1142, y + 4, 128, 50));
     }
     noteToggles["vib_on"]->setBounds (R (1300, 700, 80, 44)); noteToggles["porta_on"]->setBounds (R (1388, 700, 80, 44));
     K ("vib_rate_hz")->setBounds (R (1298, 752, 84, 100)); K ("vib_depth_ct")->setBounds (R (1386, 752, 84, 100)); K ("porta_ms")->setBounds (R (1342, 846, 84, 92));

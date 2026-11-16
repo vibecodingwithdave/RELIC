@@ -8,13 +8,13 @@ namespace help
 {
 using Table = std::map<juce::String, juce::String>;
 
-// Parameters that come in numbered families share one entry: osc3_* reads osc2_*, lfo2_* reads lfo1_*, mod2..4_* read mod1_*, menv2_* reads menv1_*.
+// Parameters that come in numbered families share one entry: osc3_* reads osc2_*, lfo2_* reads lfo1_*, mod2..8_* read mod1_*, menv2_* reads menv1_*.
 inline juce::String familyKey (juce::String id)
 {
     if (id.startsWith ("osc3_")) return "osc2_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("lfo2_")) return "lfo1_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("menv2_")) return "menv1_" + id.fromFirstOccurrenceOf ("_", false, false);
-    if (id.length() > 5 && id.startsWith ("mod") && id[3] >= '2' && id[3] <= '4' && id[4] == '_') return "mod1_" + id.substring (5);
+    if (id.length() > 5 && id.startsWith ("mod") && id[3] >= '2' && id[3] <= '8' && id[4] == '_') return "mod1_" + id.substring (5);
     return id;
 }
 
@@ -182,8 +182,10 @@ inline const Table& params()
         { "lfo1_sync", "Free, or locked to the host tempo at a note length." },
         { "lfo1_rate_hz", "Speed of the LFO when it is not synced, in Hz." },
         { "lfo1_keysync", "Restarts the LFO whenever a note starts from silence." },
-        { "mod1_src", "What drives this modulation slot: an LFO, an envelope, velocity, the mod wheel, the XY pad or a macro." },
-        { "mod1_dst", "What this slot controls: cutoff, resonance, pitch, level or pulse width." },
+        { "mod1_src", "What drives this modulation slot: an LFO, an envelope, velocity, the mod wheel, the XY pad, a macro, the key you play (Key Track) or a random value picked for each note." },
+        { "mod1_dst", "What this slot controls: cutoff, resonance, pitch, level, pulse width, pan, texture level, texture position or sample level." },
+        { "mod1_curve", "Bends the response of this slot. Centre is a straight line; right starts slowly and rises late, left rises early. It shapes how the source value maps to the target." },
+        { "mod1_range", "Which part of the source is used: Full, only the positive half, or only the negative half." },
         { "mod1_amt", "How strongly the source moves the target. Centre is none; left reverses it." },
         { "menv1_attack_ms", "Attack of this modulation envelope." },
         { "menv1_decay_ms", "Decay of this modulation envelope." },
@@ -309,6 +311,7 @@ inline const Table& names()
         { "N", "Notch: removes a band around the cutoff." },
         { "filter_display", "The filter's response. Click to change the filter model (Clean, OBX, SP-12, MPC60). Shift-click to choose what it filters: everything, the synth only or the sample only." },
         { "LOAD", "Loads an audio file into the slot you are editing (A or B). You can also drag a file onto the window to load slot A." },
+        { "SLOTS", "Shows modulation slots 1-4 or 5-8." },
         { "GRAINS", "The grain cloud settings: level, position, spread, grain size, density and jitter." },
         { "SHAPE", "The texture's own file settings: pitch, envelope, filter and routing." },
         { "LOAD TEXTURE", "Loads a separate file for the texture. Turn OWN FILE on to play it." },

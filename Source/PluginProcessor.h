@@ -117,7 +117,7 @@ private:
         double samplePosB = 0.0; bool sampleActiveB = false;   // slot B when it plays as its own layer
         double baseHz = 440.0; float glide = 0.0f;       // glide: semitones still to travel
         struct Grain { float pos = 0, step = 1, gl = 1, gr = 1; int age = 0, len = 0; bool on = false; };
-        Grain grains[12]; float grainTimer = 0.0f; unsigned int gseed = 1;       // texture layer
+        Grain grains[12]; float grainTimer = 0.0f; unsigned int gseed = 1; float modRand = 0.0f;       // texture layer; modRand: the Random modulation source for this note
         float ks[8192] {}; int ksPos = 0; float ksLp = 0.0f;                    // plucked-string model
         float bellAmp[6] {}; unsigned int nseed = 1;                            // bell model
         int zone = 0;                                                           // keyboard split: 0 none, 1 sample only, 2 synth only

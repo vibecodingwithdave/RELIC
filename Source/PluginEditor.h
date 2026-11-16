@@ -1075,6 +1075,8 @@ private:
     // TEXTURE tab: grains page or own-file page
     int texView = 0; std::unique_ptr<ui::StoneButton> texViewBtn[2], loadTex; std::vector<juce::Component*> texGrains, texShape, texOwnOnly;
     void updateTextureView();
+    // MOD tab: slots 1-4 or 5-8
+    int modPage = 0; std::unique_ptr<ui::StoneButton> modPageBtn[2]; void updateModView();
 
     // OSC tab
     std::unique_ptr<ui::WaveDisplay> wave; std::unique_ptr<ui::EnvDisplay> env; std::unique_ptr<ui::Meter> meter;
