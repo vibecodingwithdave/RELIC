@@ -1233,6 +1233,8 @@ private:
     std::vector<Pad> pads;
     std::unique_ptr<ui::StoneButton> waveLeft, waveRight, waveName, polyBtn, allOn, bypassFx;
     std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad;      // wavetable file strip on the OSC tab
+    struct SyncChip { std::unique_ptr<ui::StoneButton> btn; juce::String knobId, syncId; };
+    std::vector<SyncChip> syncChips; void updateSyncChips();        // a small note-value button on each rate / time knob that can follow the host tempo
     void showWavetableMenu(); void loadWavetableDialog(); void afterWavetableLoaded();
     juce::Label waveLabel;
 

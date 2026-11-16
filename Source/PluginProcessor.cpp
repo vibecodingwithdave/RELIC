@@ -16,6 +16,7 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
         { v.push_back (std::make_unique<juce::AudioParameterBool> (id (i), n, def)); };
     auto choice = [&] (const juce::String& i, const juce::String& n, juce::StringArray c, int def)
         { v.push_back (std::make_unique<juce::AudioParameterChoice> (id (i), n, c, def)); };
+    auto syncNames = [] { return juce::StringArray { "Free", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/2T", "1/4T", "1/8T", "1/16T", "1/2D", "1/4D", "1/8D", "1/16D", "2/1", "4/1" }; };   // tempo-sync note values; the first six are the original LFO list
     auto integer = [&] (const juce::String& i, const juce::String& n, int lo, int hi, int def)
         { v.push_back (std::make_unique<juce::AudioParameterInt> (id (i), n, lo, hi, def)); };
 
@@ -139,7 +140,7 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
         const juce::String t = "lfo" + juce::String (n);
         choice (t + "_shape", "LFO " + juce::String (n) + " Shape", { "Sine", "Triangle", "Saw", "Square", "Random" }, 0);
         flt (t + "_rate_hz", "LFO " + juce::String (n) + " Rate Hz", 0.05f, 20.0f, n == 1 ? 2.0f : 0.5f, 0.5f);
-        choice (t + "_sync", "LFO " + juce::String (n) + " Sync", { "Free", "1/1", "1/2", "1/4", "1/8", "1/16" }, 0);
+        choice (t + "_sync", "LFO " + juce::String (n) + " Sync", syncNames(), 0);
     }
     for (int n = 1; n <= 8; ++n)       // slots 5 to 8, the extra sources and targets, Curve and Range are newer; the order of the older choices never changes
     {
@@ -280,6 +281,11 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     }
     integer ("arp_pat_length", "Arp Pattern Length", 1, 64, 16);
     for (int i = 1; i <= 64; ++i) integer ("arp_pat_" + juce::String (i), "Arp Pattern Step " + juce::String (i), -12, 12, (i - 1) % 8);   // Custom mode: note number of each step
+    // Tempo sync for the effects and the vibrato: Free keeps the Hz / ms control, a note value follows the host tempo (new controls default to Free)
+    for (const char* e : { "trem", "pan", "chorus", "flanger", "wah", "vib", "delay", "pdelay" })
+        choice (juce::String (e) + "_sync", juce::String (e) + " Sync", syncNames(), 0);
+    flt ("vib_delay_ms", "Vibrato Delay Ms", 0.0f, 3000.0f, 0.0f, 0.5f);      // each note waits this long before its vibrato starts
+    flt ("vib_fade_ms", "Vibrato Fade In Ms", 0.0f, 3000.0f, 0.0f, 0.5f);     // then the vibrato grows to full depth over this long
     toggle ("wt_use_file", "Wavetable From File", false);   // on: oscillators set to Wavetable play the loaded file instead of the built-in bank
     // Master
     flt ("master", "Master", 0.0f, 2.0f, 0.8f);
@@ -658,7 +664,7 @@ void RelicProcessor::noteOn (int note, float vel)
             if (idx < 0) for (int i = 0; i < allowed; ++i) if (! voices[i].active) { idx = i; break; }
             if (idx < 0) { unsigned long long oldest = ~0ull; for (int i = 0; i < allowed; ++i) if (voices[i].age < oldest) { oldest = voices[i].age; idx = i; } }
             auto& vo = voices[idx]; const double nF = (double) audioSample->frames();
-            vo.active = true; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.glide = 0.0f; vo.chop = true; vo.sampleActive = true; vo.sampleActiveB = false;
+            vo.active = true; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.vibPh = 0.0; vo.vibAge = 0; vo.glide = 0.0f; vo.chop = true; vo.sampleActive = true; vo.sampleActiveB = false;
             vo.sliceA = std::floor (b[pad] * nF); vo.sliceB = std::min (nF - 1.0, std::floor (b[pad + 1] * nF));
             if (vo.sliceB < vo.sliceA + 2.0) vo.sliceB = std::min (nF - 1.0, vo.sliceA + 2.0);
             vo.samplePos = p ("sample_reverse")->load() > 0.5f ? vo.sliceB - 1.0 : vo.sliceA;
@@ -681,7 +687,7 @@ void RelicProcessor::noteOn (int note, float vel)
     if (idx < 0) { unsigned long long oldest = ~0ull; for (int i = 0; i < allowed; ++i) if (voices[i].age < oldest) { oldest = voices[i].age; idx = i; } }
     auto& vo = voices[idx];
     vo.zone = p ("split_on")->load() > 0.5f ? (note < (int) p ("split_note")->load() ? 1 : 2) : 0;
-    vo.active = true; vo.chop = false; vo.note = note; vo.velocity = vel; vo.age = ++counter;
+    vo.active = true; vo.chop = false; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.vibPh = 0.0; vo.vibAge = 0;
     vo.glide = (p ("porta_on")->load() > 0.5f && lastNote >= 0) ? (float) (lastNote - note) : 0.0f; lastNote = note;
     vo.baseHz = 440.0 * std::pow (2.0, (note - 69) / 12.0);
     unsigned int seed = (unsigned int) (note * 2654435761u + counter * 40503u);
@@ -847,15 +853,17 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
     for (int k = 0; k < nSlots; ++k) { if (slots[k].src == 5) useEnv[0] = true; if (slots[k].src == 6) useEnv[1] = true; }
     float me[2][4];   // attack, decay, sustain, release of each modulation envelope
     for (int k = 0; k < 2; ++k) { const juce::String s = "menv" + juce::String (k + 1); me[k][0] = p ((s + "_attack_ms").toRawUTF8())->load(); me[k][1] = p ((s + "_decay_ms").toRawUTF8())->load(); me[k][2] = p ((s + "_sustain").toRawUTF8())->load(); me[k][3] = p ((s + "_release_ms").toRawUTF8())->load(); }
-    float lfoBuf[2][kChunk], vibBuf[kChunk];
+    float lfoBuf[2][kChunk], vibBuf[kChunk]; double vibHz = 5.5;
     {
         const int sh1 = (int) p ("lfo1_shape")->load(), sh2 = (int) p ("lfo2_shape")->load();
         auto hzOf = [&] (const char* rate, const char* sync) { const double b = rf::lfoSyncBeats ((int) p (sync)->load()); return b > 0.0 ? hostBpm / 60.0 / b : (double) p (rate)->load(); };
-        const double h1 = hzOf ("lfo1_rate_hz", "lfo1_sync"), h2 = hzOf ("lfo2_rate_hz", "lfo2_sync"), hv = p ("vib_rate_hz")->load();
+        const double h1 = hzOf ("lfo1_rate_hz", "lfo1_sync"), h2 = hzOf ("lfo2_rate_hz", "lfo2_sync"), hv = rf::syncedHz ((int) p ("vib_sync")->load(), hostBpm, (double) p ("vib_rate_hz")->load());
+        vibHz = hv;
         for (int i = 0; i < n; ++i) { lfoBuf[0][i] = lfo[0].next (h1, sr, sh1); lfoBuf[1][i] = lfo[1].next (h2, sr, sh2); vibBuf[i] = vibLfo.next (hv, sr, rf::ModLfo::Sine); }
     }
     const float wheel = modWheel.load(), bendSemis = pitchBend.load() * 2.0f;
     const bool vibOn = p ("vib_on")->load() > 0.5f; const float vibSemis = p ("vib_depth_ct")->load() * 0.01f;
+    const double vibDelaySm = p ("vib_delay_ms")->load() * 0.001 * sr, vibFadeSm = p ("vib_fade_ms")->load() * 0.001 * sr; const bool vibOnset = vibDelaySm > 0.0 || vibFadeSm > 0.0;
     const bool portaOn = p ("porta_on")->load() > 0.5f; const float glideCoef = std::exp (-1.0f / (std::max (1.0f, p ("porta_ms")->load()) * 0.001f * (float) sr));
 
     struct Xo { bool on; int shape; float level; double mult; } xo[2];
@@ -911,7 +919,19 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                 const float c = juce::jlimit (20.0f, 20000.0f, cutoff * std::exp2 (5.0f * mc)), qq = rf::resonanceToQ (juce::jlimit (0.0f, 1.0f, reso0 + 0.5f * mr));
                 setupF (c, qq);
             }
-            float semis = mp * 12.0f + bendSemis + (vibOn ? vibBuf[i] * vibSemis : 0.0f);
+            float vibNow = 0.0f;
+            if (vibOn)
+            {
+                if (! vibOnset) vibNow = vibBuf[i];      // no delay or fade: the shared vibrato, as before
+                else                                      // delay, then a fade-in, on this note's own vibrato (it starts from zero, so there is no jump)
+                {
+                    const double a = (double) vo.vibAge++ - vibDelaySm;
+                    const float env = a <= 0.0 ? 0.0f : (vibFadeSm > 0.0 ? (float) std::min (1.0, a / vibFadeSm) : 1.0f);
+                    vo.vibPh += vibHz / sr; if (vo.vibPh >= 1.0) vo.vibPh -= 1.0;
+                    vibNow = env * (float) std::sin (2.0 * rf::kPi * vo.vibPh);
+                }
+            }
+            float semis = mp * 12.0f + bendSemis + vibNow * vibSemis;
             if (vo.glide != 0.0f) { semis += vo.glide; vo.glide *= glideCoef; if (std::abs (vo.glide) < 1e-3f) vo.glide = 0.0f; }
             const double pf = semis != 0.0f ? (double) std::exp2 (semis / 12.0f) : 1.0;
             const float pw = juce::jlimit (0.05f, 0.95f, pw0 + 0.45f * mw), lvl = juce::jlimit (0.0f, 2.0f, 1.0f + ml);
@@ -1157,21 +1177,21 @@ void RelicProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         float l = L[i], r = R[i];
         if (cOn) crush.process (l, r, p ("crush_bits")->load(), p ("crush_downsample")->load(), p ("crush_mix")->load());
         if (lfOn) lofi.process (l, r, p ("lofi_tone_hz")->load(), p ("lofi_noise")->load(), p ("lofi_wobble")->load(), p ("lofi_mix")->load(), sr);
-        if (whOn) wah.process (l, r, (int) p ("wah_mode")->load(), p ("wah_rate_hz")->load(), p ("wah_depth")->load(), p ("wah_reso")->load(), p ("wah_mix")->load(), sr);
+        if (whOn) wah.process (l, r, (int) p ("wah_mode")->load(), rf::syncedHz ((int) p ("wah_sync")->load(), hostBpm, p ("wah_rate_hz")->load()), p ("wah_depth")->load(), p ("wah_reso")->load(), p ("wah_mix")->load(), sr);
         if (tkOn) talk.process (l, r, p ("talk_vowel")->load(), p ("talk_reso")->load(), p ("talk_rate_hz")->load(), p ("talk_depth")->load(), p ("talk_mix")->load(), sr);
         if (tpOn) tape.process (l, r, p ("tape_drive")->load(), p ("tape_tone")->load(), p ("tape_wobble")->load(), sr);
         if (eqOn) eq.process (l, r, p ("eq_low_db")->load(), p ("eq_mid_hz")->load(), p ("eq_mid_db")->load(), p ("eq_high_db")->load(), sr);
-        if (pOn) panner.process (l, r, p ("pan_rate_hz")->load(), p ("pan_depth")->load(), (int) p ("pan_shape")->load(), sr);
-        if (tOn) trem.process (l, r, p ("trem_rate_hz")->load(), p ("trem_depth")->load(), sr);
+        if (pOn) panner.process (l, r, rf::syncedHz ((int) p ("pan_sync")->load(), hostBpm, p ("pan_rate_hz")->load()), p ("pan_depth")->load(), (int) p ("pan_shape")->load(), sr);
+        if (tOn) trem.process (l, r, rf::syncedHz ((int) p ("trem_sync")->load(), hostBpm, p ("trem_rate_hz")->load()), p ("trem_depth")->load(), sr);
         if (kOn) comp.process (l, r, p ("comp_threshold_db")->load(), p ("comp_ratio")->load(), p ("comp_attack_ms")->load(),
                                p ("comp_release_ms")->load(), p ("comp_makeup_db")->load(), sr);
         if (otOn) ott.process (l, r, p ("ott_depth")->load(), p ("ott_time")->load(), p ("ott_mix")->load(), sr);
         if (sgOn) sgate.process (l, r, p ("sgate_threshold_db")->load(), p ("sgate_depth")->load(), p ("sgate_release_ms")->load(), p ("sgate_mix")->load(), sr);
-        if (chOn) chorus.process (l, r, p ("chorus_rate_hz")->load(), p ("chorus_depth")->load(), p ("chorus_mix")->load(), sr);
-        if (flOn) flanger.process (l, r, p ("flanger_rate_hz")->load(), p ("flanger_depth")->load(), p ("flanger_feedback")->load(), p ("flanger_mix")->load(), sr);
-        if (dOn) delay.process (l, r, p ("delay_time_ms")->load(), p ("delay_feedback")->load(), p ("delay_mix")->load(),
+        if (chOn) chorus.process (l, r, rf::syncedHz ((int) p ("chorus_sync")->load(), hostBpm, p ("chorus_rate_hz")->load()), p ("chorus_depth")->load(), p ("chorus_mix")->load(), sr);
+        if (flOn) flanger.process (l, r, rf::syncedHz ((int) p ("flanger_sync")->load(), hostBpm, p ("flanger_rate_hz")->load()), p ("flanger_depth")->load(), p ("flanger_feedback")->load(), p ("flanger_mix")->load(), sr);
+        if (dOn) delay.process (l, r, (float) rf::syncedMs ((int) p ("delay_sync")->load(), hostBpm, p ("delay_time_ms")->load()), p ("delay_feedback")->load(), p ("delay_mix")->load(),
                                 p ("delay_pingpong")->load() > 0.5f, sr, (int) p ("delay_mode")->load());
-        if (pdOn) pdelay.process (l, r, p ("pdelay_time_ms")->load(), p ("pdelay_feedback")->load(), (int) p ("pdelay_semi")->load(), p ("pdelay_mix")->load(), sr);
+        if (pdOn) pdelay.process (l, r, (float) rf::syncedMs ((int) p ("pdelay_sync")->load(), hostBpm, p ("pdelay_time_ms")->load()), p ("pdelay_feedback")->load(), (int) p ("pdelay_semi")->load(), p ("pdelay_mix")->load(), sr);
         if (rvOn) reverb.process (l, r, p ("reverb_size")->load(), p ("reverb_damp")->load(), p ("reverb_predelay_ms")->load(), p ("reverb_mix")->load(), sr);
         if (wdOn) widener.process (l, r, p ("widener_width")->load());
         L[i] = safe (l * master); R[i] = safe (r * master);

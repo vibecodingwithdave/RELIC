@@ -122,6 +122,7 @@ private:
     {
         bool active = false;
         int note = -1; float velocity = 0.0f; unsigned long long age = 0;
+        double vibPh = 0.0; unsigned long long vibAge = 0;   // this note's own vibrato phase and age in samples (used when the vibrato has a delay or fade-in)
         double phase[7] {}; double phaseX[2] {};   // phaseX: oscillators 2 and 3
         double samplePos = 0.0; bool sampleActive = false;
         double samplePosB = 0.0; bool sampleActiveB = false;   // slot B when it plays as its own layer

@@ -419,7 +419,7 @@ RelicEditor::RelicEditor (RelicProcessor& p)
     }
     addNoteToggle ("vib_on", "VIB", 0.42f); addNoteToggle ("porta_on", "PORTA", 0.38f);
     for (auto id : { "lfo1_keysync", "lfo2_keysync" }) modGroup.push_back (addNoteToggle (id, "KEY SYNC", 0.36f));
-    addKnob ("vib_rate_hz", "V.Rate"); addKnob ("vib_depth_ct", "V.Depth"); addKnob ("porta_ms", "Glide");
+    addKnob ("vib_rate_hz", "V.Rate"); addKnob ("vib_depth_ct", "V.Depth"); addKnob ("porta_ms", "Glide"); addKnob ("vib_delay_ms", "V.Delay"); addKnob ("vib_fade_ms", "V.Fade");
 
     // ---- sidebar: the eight icon buttons, and the CRAFT / UNDO / REDO / CHAOS buttons over the picture ----
     const char* side[8] = { "Presets", "Chords", "One-shots", "Textures", "Expand", "History", "Save", "Init" };
@@ -511,6 +511,22 @@ RelicEditor::RelicEditor (RelicProcessor& p)
     keyboard.setColour (juce::MidiKeyboardComponent::shadowColourId, juce::Colours::transparentBlack);
     addAndMakeVisible (keyboard);
 
+    // tempo-sync chips: each sits over the top-right corner of its rate / time knob and shows FREE or the note value
+    for (auto pr : { std::make_pair ("trem_rate_hz", "trem_sync"), { "pan_rate_hz", "pan_sync" }, { "chorus_rate_hz", "chorus_sync" }, { "flanger_rate_hz", "flanger_sync" }, { "wah_rate_hz", "wah_sync" },
+                     { "vib_rate_hz", "vib_sync" }, { "delay_time_ms", "delay_sync" }, { "pdelay_time_ms", "pdelay_sync" } })
+    {
+        SyncChip sc; sc.knobId = pr.first; sc.syncId = pr.second;
+        sc.btn = std::make_unique<ui::StoneButton> ("FREE", true, false); sc.btn->textScale = 0.34f; sc.btn->setTooltip (help::forName ("SYNC CHIP"));
+        const juce::String sid = pr.second;
+        sc.btn->onClick = [this, sid]
+        {
+            auto* c = choiceParam (proc.apvts, sid.toRawUTF8()); if (c == nullptr) return;
+            juce::PopupMenu m; m.addSectionHeader ("TEMPO SYNC  (Free = use the knob)");
+            for (int i = 0; i < c->choices.size(); ++i) m.addItem (1 + i, c->choices[i], true, i == c->getIndex());
+            m.showMenuAsync (juce::PopupMenu::Options(), [this, sid] (int r) { if (r > 0) setChoice (sid.toRawUTF8(), r - 1); updateSyncChips(); });
+        };
+        addChildComponent (*sc.btn); syncChips.push_back (std::move (sc));
+    }
     setResizeLimits (742, 530, 2226, 1590);
     setResizable (true, true);
     getConstrainer()->setFixedAspectRatio ((double) DW / DH);
@@ -621,7 +637,7 @@ void RelicEditor::updateTextureView()
 
 void RelicEditor::setTab (int t)
 {
-    currentTab = t;
+    currentTab = t; struct Later { RelicEditor* e; ~Later() { e->updateSyncChips(); } } later { this };
     for (int i = 0; i < 11; ++i) tabs[i]->setToggleState (i == t, juce::dontSendNotification);
     for (auto* c : oscGroup) c->setVisible (t == 1);
     for (auto* c : sampGroup) c->setVisible (t == 0);
@@ -647,7 +663,7 @@ void RelicEditor::timerCallback()
     noteToggles["arp_run"]->setButtonText (proc.apvts.getRawParameterValue ("arp_run")->load() > 0.5f ? "GO" : "STOP");
     fxAB->setButtonText (proc.fxSlotActive() == 0 ? "EFFECTS A" : "EFFECTS B"); fxAB->setToggleState (proc.fxSlotActive() == 1, juce::dontSendNotification);
     splitBtn->setButtonText (proc.apvts.getRawParameterValue ("split_on")->load() > 0.5f ? "SPLIT " + juce::MidiMessage::getMidiNoteName ((int) proc.apvts.getRawParameterValue ("split_note")->load(), true, true, 3) : juce::String ("SPLIT"));
-    updateSamplerView(); updateTextureView(); updateArpView(); updateChordView();
+    updateSamplerView(); updateTextureView(); updateArpView(); updateChordView(); updateSyncChips();
     proc.historyTick(); undoBtn->setEnabled (proc.canUndo()); redoBtn->setEnabled (proc.canRedo()); lockFxBtn->setToggleState (proc.lockFx.load(), juce::dontSendNotification);
     if (proc.getPresetName() != lastPresetName) { lastPresetName = proc.getPresetName(); repaint (R (600, 690, 590, 52)); }
     if (auto* c = choiceParam (proc.apvts, "waveform")) waveName->setButtonText (c->getCurrentChoiceName().toUpperCase());
@@ -924,7 +940,7 @@ void RelicEditor::resized()
         amountSliders[(size_t) (2 * (n - 1))]->setBounds (R (978, y + 4, 160, 50)); amountSliders[(size_t) (2 * (n - 1) + 1)]->setBounds (R (1142, y + 4, 128, 50));
     }
     noteToggles["vib_on"]->setBounds (R (1300, 700, 80, 44)); noteToggles["porta_on"]->setBounds (R (1388, 700, 80, 44));
-    K ("vib_rate_hz")->setBounds (R (1298, 752, 84, 100)); K ("vib_depth_ct")->setBounds (R (1386, 752, 84, 100)); K ("porta_ms")->setBounds (R (1342, 846, 84, 92));
+    K ("vib_rate_hz")->setBounds (R (1298, 752, 84, 100)); K ("vib_depth_ct")->setBounds (R (1386, 752, 84, 100)); K ("vib_delay_ms")->setBounds (R (1298, 846, 84, 92)); K ("vib_fade_ms")->setBounds (R (1386, 846, 84, 92)); K ("porta_ms")->setBounds (R (1342, 942, 84, 92));
 
     // master / filter
     K ("master")->setBounds (R (1316, 106, 132, 72));
@@ -1009,4 +1025,19 @@ void RelicEditor::showWavetableMenu()
         else if (r == 3) { proc.clearWavetable(); if (auto* q = proc.apvts.getParameter ("wt_use_file")) q->setValueNotifyingHost (0.0f); repaint(); }
         else if (r >= 1000 && r - 1000 < (int) files.size() && proc.loadWavetableFile (files[(size_t) (r - 1000)])) afterWavetableLoaded();
     });
+}
+
+void RelicEditor::updateSyncChips()
+{
+    for (auto& sc : syncChips)
+    {
+        auto* k = K (sc.knobId.toRawUTF8()); auto* c = choiceParam (proc.apvts, sc.syncId.toRawUTF8()); if (k == nullptr || c == nullptr) continue;
+        const bool synced = c->getIndex() != 0, show = k->isVisible();
+        sc.btn->setVisible (show);
+        if (! show) continue;
+        const auto kb = k->getBounds(); const int w = juce::jmax (30, kb.getWidth() / 2), h = juce::jmax (14, kb.getHeight() / 6);
+        sc.btn->setBounds (kb.getRight() - w, kb.getY(), w, h);
+        sc.btn->setButtonText (synced ? c->getCurrentChoiceName() : juce::String ("FREE")); sc.btn->setToggleState (synced, juce::dontSendNotification);
+        k->setAlpha (synced ? 0.5f : 1.0f);
+    }
 }

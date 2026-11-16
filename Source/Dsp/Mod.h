@@ -1,6 +1,7 @@
 // Low-frequency oscillator for the modulation matrix: bipolar output, -1 to +1.
 #pragma once
 #include <cmath>
+#include <algorithm>
 #include <cstdint>
 
 namespace rf {
@@ -31,8 +32,24 @@ struct ModLfo
 // Beats per LFO cycle for the sync choices (index 0 = free running).
 inline double lfoSyncBeats (int idx)
 {
-    static const double b[6] = { 0.0, 4.0, 2.0, 1.0, 0.5, 0.25 };
-    return b[idx < 0 ? 0 : (idx > 5 ? 5 : idx)];
+    // Free, 1/1, 1/2, 1/4, 1/8, 1/16, 1/32, triplets 1/2T..1/16T, dotted 1/2D..1/16D, 2/1, 4/1. The first six are the original LFO list, so saved indexes keep their meaning.
+    static const double b[17] = { 0.0, 4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 4.0 / 3.0, 2.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0, 3.0, 1.5, 0.75, 0.375, 8.0, 16.0 };
+    return b[idx < 0 ? 0 : (idx > 16 ? 16 : idx)];
+}
+
+// Rate in Hz of a cycle that lasts the given note value (0 = free: the caller keeps its own rate), limited to a range the effects can use.
+inline double syncedHz (int idx, double bpm, double freeHz)
+{
+    const double b = lfoSyncBeats (idx);
+    if (b <= 0.0) return freeHz;
+    const double hz = std::max (20.0, bpm) / 60.0 / b; return hz < 0.02 ? 0.02 : (hz > 30.0 ? 30.0 : hz);
+}
+// Time in milliseconds of the given note value (0 = free), limited to the delay lines' two seconds.
+inline double syncedMs (int idx, double bpm, double freeMs)
+{
+    const double b = lfoSyncBeats (idx);
+    if (b <= 0.0) return freeMs;
+    const double ms = b * 60000.0 / std::max (20.0, bpm); return ms < 1.0 ? 1.0 : (ms > 2000.0 ? 2000.0 : ms);
 }
 
 } // namespace rf
