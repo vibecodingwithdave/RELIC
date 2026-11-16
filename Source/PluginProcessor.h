@@ -110,6 +110,7 @@ private:
         int note = -1; float velocity = 0.0f; unsigned long long age = 0;
         double phase[7] {}; double phaseX[2] {};   // phaseX: oscillators 2 and 3
         double samplePos = 0.0; bool sampleActive = false;
+        double samplePosB = 0.0; bool sampleActiveB = false;   // slot B when it plays as its own layer
         double baseHz = 440.0; float glide = 0.0f;       // glide: semitones still to travel
         struct Grain { float pos = 0, step = 1, gl = 1, gr = 1; int age = 0, len = 0; bool on = false; };
         Grain grains[12]; float grainTimer = 0.0f; unsigned int gseed = 1;       // texture layer

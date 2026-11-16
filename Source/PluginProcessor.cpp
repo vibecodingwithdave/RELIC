@@ -170,6 +170,21 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     flt ("sample_end", "Sample End", 0.0f, 1.0f, 1.0f);                         // playback end, independent of the loop end
     flt ("sample_tune_ct", "Sample Tune Ct", -100.0f, 100.0f, 0.0f);            // fine tuning of the sample, in cents
     flt ("sample_morph", "Sample Morph", 0.0f, 1.0f, 0.0f);                     // 0 = slot A, 1 = slot B
+    // Slot B as an independent layer. Off by default: B then only morphs with A and uses A's settings, as before.
+    // On, B has its own gain, root, tuning, start/end, loop and reverse, and the A/B slider balances the layers (both at full level in the middle).
+    toggle ("sampleb_indep", "Sample B Independent", false);
+    flt ("sampleb_gain", "Sample B Gain", 0.0f, 2.0f, 1.0f);
+    integer ("sampleb_root", "Sample B Root", 0, 127, 60);
+    integer ("sampleb_octave", "Sample B Octave", -2, 2, 0);
+    flt ("sampleb_tune_ct", "Sample B Tune Ct", -100.0f, 100.0f, 0.0f);
+    toggle ("sampleb_loop", "Sample B Loop", false);
+    toggle ("sampleb_reverse", "Sample B Reverse", false);
+    toggle ("sampleb_normalize", "Sample B Normalize", true);
+    flt ("sampleb_start", "Sample B Start", 0.0f, 1.0f, 0.0f);
+    flt ("sampleb_end", "Sample B End", 0.0f, 1.0f, 1.0f);
+    flt ("sampleb_loop_start", "Sample B Loop Start", 0.0f, 1.0f, 0.0f);
+    flt ("sampleb_loop_end", "Sample B Loop End", 0.0f, 1.0f, 1.0f);
+    choice ("sampleb_xfade", "Sample B Xfade", { "Off", "5 ms", "10 ms", "20 ms", "50 ms", "100 ms", "200 ms", "500 ms" }, 0);
     // Texture layer (granular cloud from the loaded sample)
     flt ("tex_level", "Texture Level", 0.0f, 1.0f, 0.0f);
     flt ("tex_pos", "Texture Position", 0.0f, 1.0f, 0.5f);
@@ -516,7 +531,7 @@ void RelicProcessor::noteOn (int note, float vel)
             if (idx < 0) for (int i = 0; i < allowed; ++i) if (! voices[i].active) { idx = i; break; }
             if (idx < 0) { unsigned long long oldest = ~0ull; for (int i = 0; i < allowed; ++i) if (voices[i].age < oldest) { oldest = voices[i].age; idx = i; } }
             auto& vo = voices[idx]; const double nF = (double) audioSample->frames();
-            vo.active = true; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.glide = 0.0f; vo.chop = true; vo.sampleActive = true;
+            vo.active = true; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.glide = 0.0f; vo.chop = true; vo.sampleActive = true; vo.sampleActiveB = false;
             vo.sliceA = std::floor (b[pad] * nF); vo.sliceB = std::min (nF - 1.0, std::floor (b[pad + 1] * nF));
             if (vo.sliceB < vo.sliceA + 2.0) vo.sliceB = std::min (nF - 1.0, vo.sliceA + 2.0);
             vo.samplePos = p ("sample_reverse")->load() > 0.5f ? vo.sliceB - 1.0 : vo.sliceA;
@@ -554,6 +569,13 @@ void RelicProcessor::noteOn (int note, float vel)
         vo.sampleActive = true;
     }
     else vo.sampleActive = false;
+    if (p ("sampleb_indep")->load() > 0.5f && audioSampleB != nullptr && audioSampleB->frames() > 1)
+    {
+        const double nb = (double) audioSampleB->frames(); const auto rb = sampleRegion (nb, "sampleb_start", "sampleb_end");
+        vo.samplePosB = p ("sampleb_reverse")->load() > 0.5f ? rb.endF : std::min ((rb.trimmed ? rb.endF : nb) - 2.0, rb.startRaw);
+        vo.sampleActiveB = true;
+    }
+    else vo.sampleActiveB = false;
     for (auto& g : vo.grains) g.on = false;
     vo.grainTimer = 0.0f; vo.gseed = (unsigned int) (counter * 2654435761u + (unsigned int) note * 40503u + 1u);
     { vo.nseed = vo.gseed * 1664525u + 1013904223u; const double D = std::min (8000.0, sr / vo.baseHz); vo.ksLp = 0.0f; vo.ksPos = 0;
@@ -606,8 +628,11 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
     const float norm = 1.0f / std::sqrt ((float) uni);
     const auto* smp = audioSample.get();
     const bool haveS = smp != nullptr && smp->frames() > 1;
+    const auto* smpB = audioSampleB.get(); const float morph = p ("sample_morph")->load();
+    const bool indepSel = p ("sampleb_indep")->load() > 0.5f;
+    const bool indepB = indepSel && smpB != nullptr && smpB->frames() > 1;           // slot B plays as its own layer
     const float mix = p ("synth_mix")->load();
-    const float synthGain = haveS ? mix : 1.0f;
+    const float synthGain = (haveS || indepB) ? mix : 1.0f;
     float sampleGainFull = 0.0f;
     float sampleGain = 0.0f, rootSemis = 0.0f; double nF = 0, loopA = 0, loopB = 0; bool loopOn = false, rev = false; double rateRatio = 1.0, xfF = 0.0; float chopGain = 0.0f, chopRate = 1.0f;
     SampleRegion rgA; double tuneMulA = 1.0;
@@ -635,9 +660,23 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
         return y1 + 0.5f * f * (y2 - y0 + f * (2.f * y0 - 5.f * y1 + 4.f * y2 - y3 + f * (3.f * (y1 - y2) + y3 - y0)));
     };
 
-    const auto* smpB = audioSampleB.get(); const float morph = p ("sample_morph")->load();
-    const bool haveB = haveS && smpB != nullptr && smpB->frames() > 1 && morph > 0.0f;
+    const bool haveB = haveS && ! indepSel && smpB != nullptr && smpB->frames() > 1 && morph > 0.0f;     // the classic A/B morph
     const double rB = haveB ? smpB->rate / smp->rate : 1.0; const float gB = haveB ? (p ("sample_normalize")->load() > 0.5f ? smp->peak / smpB->peak : 1.0f) : 1.0f;
+    // Independent slot B: its own region, loop, tuning and gain. In this mode the A/B slider balances the two layers, both at full level in the middle.
+    const float wA = indepB && haveS ? std::min (1.0f, 2.0f * (1.0f - morph)) : 1.0f, wB = indepB ? (haveS ? std::min (1.0f, 2.0f * morph) : 1.0f) : 0.0f;
+    double nB = 0, loopAB = 0, loopBB = 0, rateB = 1.0, xfBF = 0.0, tuneMulB = 1.0; bool loopOnB = false, revB = false; SampleRegion rgB; float gainBFull = 0.0f, gainBMix = 0.0f, rootB = 0.0f;
+    if (indepB)
+    {
+        nB = (double) smpB->frames(); rgB = sampleRegion (nB, "sampleb_start", "sampleb_end");
+        gainBFull = p ("sampleb_gain")->load() * (p ("sampleb_normalize")->load() > 0.5f ? 1.0f / smpB->peak : 1.0f); gainBMix = (1.0f - mix) * gainBFull;
+        rootB = (float) ((int) p ("sampleb_root")->load() - 12 * (int) p ("sampleb_octave")->load());
+        loopOnB = p ("sampleb_loop")->load() > 0.5f; revB = p ("sampleb_reverse")->load() > 0.5f;
+        loopAB = std::floor ((double) p ("sampleb_loop_start")->load() * nB);
+        if (rgB.trimmed && loopAB > rgB.endF - 2.0) loopAB = rgB.startF;
+        loopBB = std::max (loopAB + 2.0, std::floor ((double) p ("sampleb_loop_end")->load() * nB)); loopBB = std::min (loopBB, rgB.endF);
+        rateB = smpB->rate / sr; tuneMulB = std::exp2 ((double) p ("sampleb_tune_ct")->load() / 1200.0);
+        { static const double xms[8] = { 0, 5, 10, 20, 50, 100, 200, 500 }; xfBF = xms[juce::jlimit (0, 7, (int) p ("sampleb_xfade")->load())] * 0.001 * smpB->rate; }
+    }
     const float texLevel = p ("tex_level")->load(); const bool texOn = haveS && texLevel > 0.0f;
     const float texPos = p ("tex_pos")->load(), texSpread = p ("tex_spread")->load(), texSize = p ("tex_size_ms")->load(), texDens = p ("tex_density")->load(), texJit = p ("tex_jitter_ct")->load();
     const float texGain = texLevel * (p ("sample_normalize")->load() > 0.5f && haveS ? 1.0f / smp->peak : 1.0f) * 0.7f / std::sqrt (std::max (1.0f, texDens * texSize * 0.001f));
@@ -691,6 +730,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
     {
         if (! vo.active) continue;
         const float vSynth = vo.zone == 1 ? 0.0f : (vo.zone == 2 ? 1.0f : synthGain), vSamp = vo.zone == 1 ? sampleGainFull : (vo.zone == 2 ? 0.0f : sampleGain);   // keyboard split
+        const float vSampB = vo.zone == 1 ? gainBFull : (vo.zone == 2 ? 0.0f : gainBMix);
         auto setupF = [&] (float c_, float q_) { vo.fl.setup (c_, q_, sr); vo.fr.setup (c_, q_, sr); if (fModel == 2) { vo.fl2.setup (c_, q_, sr); vo.fr2.setup (c_, q_, sr); } };
         if (fOn) setupF (cutoff, q);
         for (int i = 0; i < n; ++i)
@@ -800,7 +840,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                     float bl = 0.0f, br = 0.0f; if (pb >= 0.0 && pb < (double) nb - 1.0) { bl = cubic (smpB->L, pb, nb) * gB; br = cubic (smpB->R, pb, nb) * gB; }
                     sl = sl * (1.0f - morph) + bl * morph; sr_ = sr_ * (1.0f - morph) + br * morph;
                 }
-                pl += sl * vSamp * vo.velocity; pr += sr_ * vSamp * vo.velocity;
+                pl += sl * vSamp * vo.velocity * wA; pr += sr_ * vSamp * vo.velocity * wA;
                 const double step = std::pow (2.0, ((double) vo.note - rootSemis) / 12.0) * rateRatio * pf * tuneMulA;
                 if (! rev)
                 {
@@ -813,6 +853,31 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                     vo.samplePos -= step;
                     if (loopOn) { if (vo.samplePos <= loopA) vo.samplePos = loopB - std::fmod (loopA - vo.samplePos, loopB - loopA); }
                     else if (vo.samplePos <= rgA.revFloor) vo.sampleActive = false;
+                }
+            }
+            if (indepB && vo.sampleActiveB && ! vo.chop)
+            {
+                const int nb = smpB->frames();
+                float bl = cubic (smpB->L, vo.samplePosB, nb), br = cubic (smpB->R, vo.samplePosB, nb);
+                const double bxf = loopOnB && ! revB ? std::min (xfBF, 0.5 * (loopBB - loopAB)) : 0.0;
+                if (bxf > 0.0 && vo.samplePosB >= loopBB - bxf)
+                {
+                    const double u = (vo.samplePosB - (loopBB - bxf)) / bxf, p2 = loopAB + u * bxf; const float gi = (float) std::sin (u * 1.5707963), go = (float) std::cos (u * 1.5707963);
+                    bl = bl * go + cubic (smpB->L, p2, nb) * gi; br = br * go + cubic (smpB->R, p2, nb) * gi;
+                }
+                pl += bl * vSampB * vo.velocity * wB; pr += br * vSampB * vo.velocity * wB;
+                const double stepB = std::pow (2.0, ((double) vo.note - rootB) / 12.0) * rateB * pf * tuneMulB;
+                if (! revB)
+                {
+                    vo.samplePosB += stepB;
+                    if (loopOnB) { if (vo.samplePosB >= loopBB) vo.samplePosB = loopAB + bxf + std::fmod (vo.samplePosB - loopBB, std::max (1.0, loopBB - loopAB - bxf)); }
+                    else if (vo.samplePosB >= rgB.endF) vo.sampleActiveB = false;
+                }
+                else
+                {
+                    vo.samplePosB -= stepB;
+                    if (loopOnB) { if (vo.samplePosB <= loopAB) vo.samplePosB = loopBB - std::fmod (loopAB - vo.samplePosB, loopBB - loopAB); }
+                    else if (vo.samplePosB <= rgB.revFloor) vo.sampleActiveB = false;
                 }
             }
             if (texOn && ! vo.chop && vo.zone != 2)
