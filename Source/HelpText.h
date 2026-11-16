@@ -8,13 +8,15 @@ namespace help
 {
 using Table = std::map<juce::String, juce::String>;
 
-// Parameters that come in numbered families share one entry: osc3_* reads osc2_*, lfo2_* reads lfo1_*, mod2..4_* read mod1_*, menv2_* reads menv1_*.
+// Parameters that come in numbered families share one entry: osc3_* reads osc2_*, lfo2_* reads lfo1_*, mod2..8_* read mod1_*, menv2_* reads menv1_*.
 inline juce::String familyKey (juce::String id)
 {
     if (id.startsWith ("osc3_")) return "osc2_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("lfo2_")) return "lfo1_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("menv2_")) return "menv1_" + id.fromFirstOccurrenceOf ("_", false, false);
-    if (id.length() > 5 && id.startsWith ("mod") && id[3] >= '2' && id[3] <= '4' && id[4] == '_') return "mod1_" + id.substring (5);
+    if (id.startsWith ("chord_deg_")) return "chord_deg_1_shape";
+    if (id.startsWith ("arp_pat_") && id != "arp_pat_length") return "arp_pat_1";
+    if (id.length() > 5 && id.startsWith ("mod") && id[3] >= '2' && id[3] <= '8' && id[4] == '_') return "mod1_" + id.substring (5);
     return id;
 }
 
@@ -22,6 +24,7 @@ inline const Table& params()
 {
     static const Table t = {
         // oscillator, envelope, master
+        { "wt_use_file", "Wavetable oscillators play the loaded wavetable file instead of the built-in bank. Width sweeps through the file's frames. Off: the built-in bank." },
         { "waveform", "The main oscillator's waveform. The arrows on either side step through them." },
         { "pulse_width", "Pulse width of the square wave, from narrow to wide. You only hear it on the square waveform." },
         { "osc_level", "Level of the main oscillator." },
@@ -36,6 +39,8 @@ inline const Table& params()
         { "master", "Master volume for the whole instrument." },
         { "vib_on", "Vibrato: a gentle pitch wobble on every note." },
         { "vib_rate_hz", "Vibrato speed, in Hz." },
+        { "vib_delay_ms", "Vibrato delay: each note holds its pitch steady for this long before the vibrato starts. 0 with Fade 0 is the plain vibrato on every note." },
+        { "vib_fade_ms", "Vibrato fade-in: after the delay, the vibrato grows from nothing to full depth over this long." },
         { "vib_depth_ct", "Vibrato depth, in cents (hundredths of a semitone)." },
         { "porta_on", "Portamento: notes slide from one pitch to the next instead of jumping." },
         { "porta_ms", "Glide time: how long the slide between notes takes." },
@@ -59,6 +64,31 @@ inline const Table& params()
         { "sample_octave", "Shifts the sample up or down in octaves." },
         { "sample_gain", "Level of the sample." },
         { "sample_start", "Where in the sample playback starts." },
+        { "sample_end", "Where playback of the sample stops, independent of the loop end. At the far right it plays to the end of the file." },
+        { "sample_tune_ct", "Fine tuning of the sample, in cents (hundredths of a semitone)." },
+        { "sampleb_indep", "Makes slot B an independent layer with its own gain, root, tuning, start, end, loop and reverse. The A/B slider then balances the two layers, both at full level in the middle." },
+        { "sampleb_gain", "Level of sample B when it is an independent layer." },
+        { "sampleb_root", "The key at which sample B plays at its original pitch." },
+        { "sampleb_octave", "Shifts sample B up or down in octaves." },
+        { "sampleb_tune_ct", "Fine tuning of sample B, in cents (hundredths of a semitone)." },
+        { "sampleb_loop", "Loops sample B between its loop points while a key is held." },
+        { "sampleb_reverse", "Plays sample B backwards." },
+        { "sampleb_normalize", "Raises sample B's level so its loudest point reaches full scale." },
+        { "sampleb_start", "Where in sample B playback starts." },
+        { "sampleb_end", "Where playback of sample B stops, independent of its loop end." },
+        { "sampleb_loop_start", "Where sample B's loop begins." },
+        { "sampleb_loop_end", "Where sample B's loop ends." },
+        { "sample_env_own", "Gives sample A its own envelope, on top of the voice envelope. Keep the voice release at least as long as this layer's release." },
+        { "sample_attack_ms", "Attack of sample A's own envelope." },
+        { "sample_decay_ms", "Decay of sample A's own envelope." },
+        { "sample_sustain", "Sustain level of sample A's own envelope." },
+        { "sample_release_ms", "Release of sample A's own envelope." },
+        { "sampleb_env_own", "Gives sample B its own envelope when it is an independent layer, on top of the voice envelope." },
+        { "sampleb_attack_ms", "Attack of sample B's own envelope." },
+        { "sampleb_decay_ms", "Decay of sample B's own envelope." },
+        { "sampleb_sustain", "Sustain level of sample B's own envelope." },
+        { "sampleb_release_ms", "Release of sample B's own envelope." },
+        { "sampleb_xfade", "Loop fade for sample B: blends the end of its loop into the start so the loop point does not click." },
         { "loop_start", "Where the loop begins inside the sample." },
         { "loop_end", "Where the loop ends inside the sample." },
         { "loop_xfade", "Loop fade: blends the end of the loop into its start so the loop point does not click. Off or 5 to 500 ms." },
@@ -68,6 +98,8 @@ inline const Table& params()
         { "chop_mode", "How the sample is cut: Even (equal parts), Onset (at the strongest hits) or Grid (on the tempo)." },
         { "chop_count", "How many slices the sample is cut into." },
         { "chop_grid", "The note length of each slice in Grid mode." },
+        { "preset_type", "Filter the list by type: full presets, or a partial preset that holds only the synth, sample, modulation, effects or arp and chord settings. Loading a partial preset changes only that part of the sound." },
+        { "CHOP KIT", "Chop kit: for each pad, choose which slice it plays, a pitch shift, reverse, a level and a choke group. Pads in one choke group cut each other off." },
         { "chop_pitch", "Shifts the pitch of the chop pads, in semitones." },
         // effects: tremolo, delay, compressor, crusher, panner
         { "trem_on", "Tremolo: turns the volume wobble on or off. Settings are on the FX tab." },
@@ -157,8 +189,10 @@ inline const Table& params()
         { "lfo1_sync", "Free, or locked to the host tempo at a note length." },
         { "lfo1_rate_hz", "Speed of the LFO when it is not synced, in Hz." },
         { "lfo1_keysync", "Restarts the LFO whenever a note starts from silence." },
-        { "mod1_src", "What drives this modulation slot: an LFO, an envelope, velocity, the mod wheel, the XY pad or a macro." },
-        { "mod1_dst", "What this slot controls: cutoff, resonance, pitch, level or pulse width." },
+        { "mod1_src", "What drives this modulation slot: an LFO, an envelope, velocity, the mod wheel, the XY pad, a macro, the key you play (Key Track) or a random value picked for each note." },
+        { "mod1_dst", "What this slot controls: cutoff, resonance, pitch, level, pulse width, pan, texture level, texture position or sample level." },
+        { "mod1_curve", "Bends the response of this slot. Centre is a straight line; right starts slowly and rises late, left rises early. It shapes how the source value maps to the target." },
+        { "mod1_range", "Which part of the source is used: Full, only the positive half, or only the negative half." },
         { "mod1_amt", "How strongly the source moves the target. Centre is none; left reverses it." },
         { "menv1_attack_ms", "Attack of this modulation envelope." },
         { "menv1_decay_ms", "Decay of this modulation envelope." },
@@ -167,7 +201,22 @@ inline const Table& params()
         { "macro_1", "A free macro. Route it to a target with a modulation slot (Source: Macro 1)." },
         { "macro_2", "A free macro. Route it to a target with a modulation slot (Source: Macro 2)." },
         // texture
-        { "tex_level", "Level of the grain cloud. Texture needs a sample loaded on the SAMPLER tab." },
+        { "tex_indep", "Plays the texture from its own file (LOAD TEXTURE) with its own pitch, level, envelope, filter and routing. Off: the texture uses sample A as before." },
+        { "tex_root", "The note at which the texture file plays at its original pitch." },
+        { "tex_octave", "Shifts the texture file by whole octaves." },
+        { "tex_tune_ct", "Fine tuning of the texture file, in cents." },
+        { "tex_normalize", "Raises the texture file to full level before playing it." },
+        { "tex_env_own", "Gives the texture its own envelope, on top of the voice envelope. Keep the voice release at least as long as the texture release." },
+        { "tex_attack_ms", "Attack of the texture envelope." },
+        { "tex_decay_ms", "Decay of the texture envelope." },
+        { "tex_sustain", "Sustain level of the texture envelope." },
+        { "tex_release_ms", "Release of the texture envelope." },
+        { "tex_filter_on", "Filters the texture on its own, separately from the voice filter." },
+        { "tex_filter_type", "Low-pass, high-pass, band-pass or notch for the texture filter." },
+        { "tex_cutoff_hz", "Cutoff frequency of the texture filter." },
+        { "tex_reso", "Resonance of the texture filter." },
+        { "tex_route", "With sample: the texture goes through the voice filter like the sample. Dry: it skips the voice filter and only passes its own." },
+        { "tex_level", "Level of the grain cloud. Texture grains come from sample A, or from its own file when OWN FILE is on." },
         { "tex_pos", "Where in the sample the grains are taken from." },
         { "tex_spread", "How much the grain position wanders around that point." },
         { "tex_size_ms", "Length of each grain, in milliseconds." },
@@ -180,7 +229,7 @@ inline const Table& params()
         { "chord_type", "What kind of chord each key plays: triad, sus2, sus4, 7th, 9th, add9, power, 11th or 13th." },
         { "chord_voicing", "How the chord notes are spread out: close, open, drop 2 or spread." },
         { "chord_inversion", "Turns the chord over: 0 is the root position, higher values move the bottom notes up." },
-        { "chord_mode", "Scale: chords follow the key and scale. Fixed: one chord shape under every key, ignoring the scale." },
+        { "chord_mode", "Scale: chords follow the key and scale. Fixed: one chord shape under every key, ignoring the scale. Custom: your own chord shape for each scale degree, edited on the grid." },
         { "chord_shape", "In Fixed mode, which chord shape is played under every key." },
         { "chord_lock", "Scale lock: keys outside the scale are moved to the nearest scale note." },
         { "chord_strum_ms", "Spreads the chord notes out in time like a strum, in milliseconds per note." },
@@ -188,7 +237,10 @@ inline const Table& params()
         // arp
         { "arp_on", "Arpeggiator: plays the held notes (or chord) one after another." },
         { "arp_div", "Rate: the length of each arp step. Triplet (T) and dotted (D) lengths are included." },
-        { "arp_mode", "Pattern: Up, Down, Up-Down, Down-Up, Random, Played, Chord, or Waterfall (overlapping notes that cascade up and mirror down)." },
+        { "arp_mode", "Pattern: Up, Down, Up-Down, Down-Up, Random, Played, Chord, Waterfall (overlapping notes that cascade up and mirror down), or Custom (a pattern of up to 64 steps that you draw)." },
+        { "chord_deg_1_shape", "The Custom chord shape of this scale degree: the notes above its root that the chord plays. Edit it on the grid; used when Mode is Custom." },
+        { "arp_pat_length", "How many steps the Custom pattern has, from 1 to 64 (four bars of 16). Right-click the pattern to change it." },
+        { "arp_pat_1", "The note number of this Custom pattern step: 0 is the lowest held note, 1 the next, and past the last one it continues an octave up. Negative numbers go down." },
         { "arp_octaves", "How many octaves the arp covers." },
         { "arp_order", "The order the held notes are taken in: by pitch, as played, converging, diverging or random." },
         { "arp_grouping", "Phrases the line into groups (such as 5-5-6) and restarts the pattern at the start of each group." },
@@ -262,13 +314,24 @@ inline const Table& names()
         { "EFFECTS B", "Switches between two complete sets of effect settings, A and B." },
         { "POLY", "Switches between playing one note at a time and eight notes at once." },
         { "wave_prev", "Previous waveform." },
+        { "SYNC CHIP", "Tempo sync for this control. FREE: the knob sets the speed (or time). A note value (1/4, 1/8T, 1/16D...) follows the host tempo instead, and the knob is ignored. T is a triplet, D is dotted. Delay times are limited to 2 seconds." },
+        { "wt_prev", "Loads the previous wavetable file in the loaded file's folder." },
+        { "wt_next", "Loads the next wavetable file in the loaded file's folder." },
+        { "wt_name", "The loaded wavetable. Click for the list of wavetable files in its folder (or the Relic wavetable folder), to open that folder, or to go back to the built-in wavetable." },
+        { "LOAD WAVETABLE", "Loads a wavetable from any folder: a WAV, AIFF or FLAC of single-cycle frames end to end (2048 samples each is usual; a file that is a single cycle works too). It is band-limited per note, so it will not alias. Up to 256 frames are used. The file stays where it is; a project remembers its path." },
         { "wave_next", "Next waveform." },
         { "LP", "Low-pass: lets the low frequencies through and turns the highs down." },
         { "HP", "High-pass: lets the high frequencies through and turns the lows down." },
         { "BP", "Band-pass: lets a band around the cutoff through." },
         { "N", "Notch: removes a band around the cutoff." },
         { "filter_display", "The filter's response. Click to change the filter model (Clean, OBX, SP-12, MPC60). Shift-click to choose what it filters: everything, the synth only or the sample only." },
-        { "LOAD", "Loads an audio file into the sampler. You can also drag a file onto the window." },
+        { "LOAD", "Loads an audio file into the slot you are editing (A or B). You can also drag a file onto the window to load slot A." },
+        { "SLOTS", "Shows modulation slots 1-4 or 5-8." },
+        { "GRAINS", "The grain cloud settings: level, position, spread, grain size, density and jitter." },
+        { "SHAPE", "The texture's own file settings: pitch, envelope, filter and routing." },
+        { "LOAD TEXTURE", "Loads a separate file for the texture. Turn OWN FILE on to play it." },
+        { "SLOT A", "Edit sample slot A: its gain, root, tuning, start, end, loop, reverse and envelope." },
+        { "SLOT B", "Edit sample slot B. Its own settings take effect once B LAYER is switched on." },
         { "LOAD B", "Loads a second sample into slot B. The A/B slider morphs between the two." },
         { "+", "Moves the on-screen keyboard up an octave." },
         { "-", "Moves the on-screen keyboard down an octave." },

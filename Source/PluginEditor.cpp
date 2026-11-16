@@ -44,7 +44,8 @@ void RelicEditor::showBrowser (bool show)
 
 void RelicEditor::stepPreset (int delta)
 {
-    auto list = proc.scanPresets(); if (list.empty()) return;
+    auto list = proc.scanPresets(); list.erase (std::remove_if (list.begin(), list.end(), [] (const PresetEntry& e) { return e.part.isNotEmpty(); }), list.end());       // partial presets are layered on by hand
+    if (list.empty()) return;
     int cur = -1; for (int i = 0; i < (int) list.size(); ++i) if (list[(size_t) i].name == proc.getPresetName() && list[(size_t) i].bank == proc.getPresetBank()) { cur = i; break; }
     int next = cur < 0 ? (delta > 0 ? 0 : (int) list.size() - 1) : (cur + delta + (int) list.size()) % (int) list.size();
     proc.loadPresetFile (list[(size_t) next].file);
@@ -61,6 +62,8 @@ void RelicEditor::doSave()
         const int cur = presetCategories().indexOf (proc.getPresetCategory());
         aw->getComboBoxComponent ("category")->setSelectedItemIndex (cur >= 0 ? cur : cats.size() - 1, juce::dontSendNotification);
     }
+    { juce::StringArray types; types.add ("Full preset (everything)"); for (int i = 1; i < presetPartNames().size(); ++i) types.add (presetPartNames()[i] + " only");
+      aw->addComboBox ("type", types, "Contains"); aw->getComboBoxComponent ("type")->setSelectedItemIndex (0, juce::dontSendNotification); }
     aw->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey)); aw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, aw] (int r)
     {
@@ -69,7 +72,8 @@ void RelicEditor::doSave()
         auto f = RelicProcessor::presetsRoot().getChildFile ("User").getChildFile (juce::File::createLegalFileName (name) + ".xml");
         const int ci = aw->getComboBoxComponent ("category")->getSelectedItemIndex();
         const juce::String category = ci >= 0 && ci < presetCategories().size() ? presetCategories()[ci] : juce::String();   // "Other" is saved as no category
-        auto doIt = [this, name, category] { proc.savePreset (name, category); if (browser->isVisible()) browser->refresh(); };
+        const auto part = (PresetPart) juce::jlimit (0, presetPartNames().size() - 1, aw->getComboBoxComponent ("type")->getSelectedItemIndex());
+        auto doIt = [this, name, category, part] { proc.savePreset (name, category, part); if (browser->isVisible()) browser->refresh(); };
         if (f.existsAsFile())
             juce::AlertWindow::showAsync (juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon).withTitle ("Replace preset?")
                 .withMessage ("\"" + name + "\" already exists in your User presets.").withButton ("Replace").withButton ("Cancel").withAssociatedComponent (this),
@@ -179,11 +183,24 @@ RelicEditor::RelicEditor (RelicProcessor& p)
         { "unison_detune", "Detune" }, { "unison_spread", "Spread" }, { "voices", "Poly" },
         { "attack_ms", "Attack" }, { "decay_ms", "Decay" }, { "sustain", "Sustain" }, { "release_ms", "Release" } };
     for (auto& k : oscKnobs) oscGroup.push_back (addKnob (k.first, k.second));
+    // wavetable file strip: FILE switches the Wavetable oscillators between the built-in bank and the loaded file; the arrows step through the file's folder
+    oscGroup.push_back (addNoteToggle ("wt_use_file", "FILE", 0.4f));
+    wtPrev = std::make_unique<ui::StoneButton> ("<", true, false); wtNext = std::make_unique<ui::StoneButton> (">", true, false);
+    wtName = std::make_unique<ui::StoneButton> ("LOAD A WAVETABLE...", true, false); wtLoad = std::make_unique<ui::StoneButton> ("LOAD FILE", true, false);
+    wtName->textScale = 0.3f; wtLoad->textScale = 0.3f;
+    wtPrev->onClick = [this] { if (proc.stepWavetable (-1)) afterWavetableLoaded(); else repaint(); };
+    wtNext->onClick = [this] { if (proc.stepWavetable (+1)) afterWavetableLoaded(); else repaint(); };
+    wtName->onClick = [this] { showWavetableMenu(); };
+    wtLoad->onClick = [this] { loadWavetableDialog(); };
+    for (auto* b : { wtPrev.get(), wtNext.get(), wtName.get(), wtLoad.get() }) { addAndMakeVisible (b); oscGroup.push_back (b); }
+    wtPrev->setTooltip (help::forName ("wt_prev")); wtNext->setTooltip (help::forName ("wt_next")); wtName->setTooltip (help::forName ("wt_name")); wtLoad->setTooltip (help::forName ("LOAD WAVETABLE"));
 
     // ---- CHORDS and ARP tabs ----
     chordDisp = std::make_unique<ui::ChordDisplay> (proc); addAndMakeVisible (*chordDisp); chordGroup.push_back (chordDisp.get());
+    shapeEditor = std::make_unique<ui::ShapeEditor> (proc); addAndMakeVisible (*shapeEditor); chordGroup.push_back (shapeEditor.get());
     arpDisp   = std::make_unique<ui::ArpDisplay> (proc);   addAndMakeVisible (*arpDisp);   arpGroup.push_back (arpDisp.get());
     rhythmLane = std::make_unique<ui::RhythmLane> (proc); addAndMakeVisible (*rhythmLane); arpGroup.push_back (rhythmLane.get());
+    patternLane = std::make_unique<ui::PatternLane> (proc); addAndMakeVisible (*patternLane); arpGroup.push_back (patternLane.get());
     addStepper ("chord_key", "Key", chordGroup); addStepper ("chord_scale", "Scale", chordGroup); addStepper ("chord_type", "Chord", chordGroup);
     addStepper ("chord_voicing", "Voicing", chordGroup); addStepper ("chord_inversion", "Inversion", chordGroup);
     addStepper ("chord_mode", "Mode", chordGroup); addStepper ("chord_shape", "Shape", chordGroup); chordGroup.push_back (addNoteToggle ("voice_lead", "VOICE LEAD", 0.34f)); chordGroup.push_back (addNoteToggle ("chord_lock", "SCALE LOCK", 0.34f)); chordGroup.push_back (addKnob ("chord_strum_ms", "Strum"));
@@ -197,25 +214,60 @@ RelicEditor::RelicEditor (RelicProcessor& p)
     addNoteToggle ("chord_on", "CHORD", 0.4f); addNoteToggle ("arp_on", "ARP", 0.4f);
 
     // ---- SAMPLER tab ----
+    // SLOT A / SLOT B choose which sample layer the tab edits. Each layer has its own controls and, when switched on, its own envelope.
     sampDisp = std::make_unique<ui::SampleDisplay> (proc); addAndMakeVisible (*sampDisp); sampGroup.push_back (sampDisp.get());
+    kitBtn = std::make_unique<ui::StoneButton> ("KIT", true, false); kitBtn->textScale = 0.4f; kitBtn->setTooltip (help::forName ("CHOP KIT")); addAndMakeVisible (*kitBtn); sampGroup.push_back (kitBtn.get());
+    kitBtn->onClick = [this]
     {
-        auto mk = [this] (const char* text, const char* paramId)
+        auto panel = std::make_unique<ui::KitPanel> (proc);
+        juce::CallOutBox::launchAsynchronously (std::move (panel), kitBtn->getScreenBounds(), nullptr);
+    };
+    {
+        auto mk = [this] (const char* text, const char* paramId, std::vector<juce::Component*>* set)
         {
             auto b = std::make_unique<ui::StoneButton> (text, true, paramId != nullptr); b->textScale = 0.4f;
-            if (paramId) sampAtts.push_back (std::make_unique<juce::ButtonParameterAttachment> (*proc.apvts.getParameter (paramId), *b, nullptr));
-            addAndMakeVisible (*b); sampGroup.push_back (b.get()); sampButtons.push_back (std::move (b));
+            if (paramId) { sampAtts.push_back (std::make_unique<juce::ButtonParameterAttachment> (*proc.apvts.getParameter (paramId), *b, nullptr)); b->setTooltip (help::forId (paramId)); }
+            addAndMakeVisible (*b); sampGroup.push_back (b.get()); if (set) set->push_back (b.get()); sampButtons.push_back (std::move (b));
         };
-        mk ("LOAD", nullptr); mk ("LOOP", "sample_loop"); mk ("REVERSE", "sample_reverse"); mk ("NORM", "sample_normalize");
+        mk ("LOAD", nullptr, nullptr);                                                                                               // 0: loads into the slot being edited
+        mk ("LOOP", "sample_loop", &sampSetA); mk ("REVERSE", "sample_reverse", &sampSetA); mk ("NORM", "sample_normalize", &sampSetA);   // 1-3: slot A
+        mk ("LOOP", "sampleb_loop", &sampSetB); mk ("REVERSE", "sampleb_reverse", &sampSetB); mk ("NORM", "sampleb_normalize", &sampSetB); // 4-6: slot B
+        mk ("OWN ENV", "sample_env_own", &sampSetA); mk ("OWN ENV", "sampleb_env_own", &sampSetB);                                    // 7-8
+        mk ("B LAYER", "sampleb_indep", &sampSetB);                                                                                   // 9
         sampButtons[0]->onClick = [this]
         {
-            chooser = std::make_unique<juce::FileChooser> ("Choose a sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg;*.m4a");
+            chooser = std::make_unique<juce::FileChooser> (sampSlot == 0 ? "Choose a sample" : "Choose a sample for slot B", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg;*.m4a");
             chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
-            { auto f = fc.getResult(); if (f.existsAsFile()) proc.loadSampleFile (f); sampDisp->repaint(); });
+            {
+                auto f = fc.getResult();
+                if (f.existsAsFile())
+                {
+                    if (sampSlot == 0) proc.loadSampleFile (f);
+                    else { proc.loadSampleFile (f, false, true); if (auto* q = proc.apvts.getParameter ("sample_morph")) if (q->getValue() < 0.01f) q->setValueNotifyingHost (0.5f); }
+                }
+                sampDisp->repaint();
+            });
         };
+        const char* sn[2] = { "SLOT A", "SLOT B" };
+        for (int i = 0; i < 2; ++i)
+        {
+            slotBtn[i] = std::make_unique<ui::StoneButton> (sn[i], true, false); slotBtn[i]->textScale = 0.4f; slotBtn[i]->setTooltip (help::forName (sn[i]));
+            slotBtn[i]->onClick = [this, i] { sampSlot = i; updateSamplerView(); };
+            addAndMakeVisible (*slotBtn[i]); sampGroup.push_back (slotBtn[i].get());
+        }
+        slotBtn[0]->setToggleState (true, juce::dontSendNotification);
     }
-    for (auto k : { std::make_pair ("sample_root", "Root"), { "sample_octave", "Octave" }, { "sample_gain", "Gain" }, { "sample_start", "Start" }, { "loop_start", "Loop in" }, { "loop_end", "Loop out" },
-                    { "attack_ms", "Attack" }, { "decay_ms", "Decay" }, { "sustain", "Sustain" }, { "release_ms", "Release" } })
-        { auto* kn = addKnobCopy (k.first, k.second); sampKnobs.push_back (kn); sampGroup.push_back (kn); }
+    {
+        auto knob = [this] (std::vector<ui::Knob*>& list, std::vector<juce::Component*>& set, const char* id, const char* name)
+        { auto* kn = addKnobCopy (id, name); list.push_back (kn); set.push_back (kn); sampGroup.push_back (kn); };
+        for (auto k : { std::make_pair ("sample_root", "Root"), { "sample_octave", "Octave" }, { "sample_tune_ct", "Tune" }, { "sample_gain", "Gain" }, { "sample_start", "Start" }, { "sample_end", "End" }, { "loop_start", "Loop in" }, { "loop_end", "Loop out" } })
+            knob (sampKnobsA, sampSetA, k.first, k.second);
+        for (auto k : { std::make_pair ("sampleb_root", "Root"), { "sampleb_octave", "Octave" }, { "sampleb_tune_ct", "Tune" }, { "sampleb_gain", "Gain" }, { "sampleb_start", "Start" }, { "sampleb_end", "End" }, { "sampleb_loop_start", "Loop in" }, { "sampleb_loop_end", "Loop out" } })
+            knob (sampKnobsB, sampSetB, k.first, k.second);
+        for (auto k : { std::make_pair ("attack_ms", "Attack"), { "decay_ms", "Decay" }, { "sustain", "Sustain" }, { "release_ms", "Release" } }) knob (envKnobsVoice, sampEnvVoice, k.first, k.second);
+        for (auto k : { std::make_pair ("sample_attack_ms", "Attack"), { "sample_decay_ms", "Decay" }, { "sample_sustain", "Sustain" }, { "sample_release_ms", "Release" } }) knob (envKnobsA, sampEnvA, k.first, k.second);
+        for (auto k : { std::make_pair ("sampleb_attack_ms", "Attack"), { "sampleb_decay_ms", "Decay" }, { "sampleb_sustain", "Sustain" }, { "sampleb_release_ms", "Release" } }) knob (envKnobsB, sampEnvB, k.first, k.second);
+    }
     mixSlider = std::make_unique<ui::MixSlider> (proc.apvts); addAndMakeVisible (*mixSlider);
     abSlider = std::make_unique<ui::MixSlider> (proc.apvts, "sample_morph", "A", "B"); addAndMakeVisible (*abSlider);
     loadB = std::make_unique<ui::StoneButton> ("LOAD B", true, false); loadB->textScale = 0.38f; addAndMakeVisible (*loadB);
@@ -226,7 +278,8 @@ RelicEditor::RelicEditor (RelicProcessor& p)
         { auto f = fc.getResult(); if (f.existsAsFile()) { proc.loadSampleFile (f, false, true); if (auto* q = proc.apvts.getParameter ("sample_morph")) if (q->getValue() < 0.01f) q->setValueNotifyingHost (0.5f); } });
     };
     sampGroup.push_back (addNoteToggle ("chop_on", "CHOP", 0.42f));
-    addStepper ("chop_mode", "Slice by", sampGroup); addStepper ("chop_count", "Slices", sampGroup); addStepper ("chop_grid", "Grid", sampGroup); addStepper ("chop_pitch", "Pitch", sampGroup); addStepper ("loop_xfade", "Loop fade", sampGroup);
+    addStepper ("chop_mode", "Slice by", sampGroup); addStepper ("chop_count", "Slices", sampGroup); addStepper ("chop_grid", "Grid", sampGroup); addStepper ("chop_pitch", "Pitch", sampGroup);
+    sampSetA.push_back (addStepper ("loop_xfade", "Loop fade", sampGroup)); sampSetB.push_back (addStepper ("sampleb_xfade", "Loop fade", sampGroup));
 
     // ---- master and filter ----
     addKnob ("master", "Master");
@@ -319,7 +372,30 @@ RelicEditor::RelicEditor (RelicProcessor& p)
 
     // ---- TEXTURE tab (opened from the Textures icon in the sidebar) ----
     for (auto k : { std::make_pair ("tex_level", "Level"), { "tex_pos", "Position" }, { "tex_spread", "Spread" }, { "tex_size_ms", "Grain" }, { "tex_density", "Density" }, { "tex_jitter_ct", "Jitter" } })
-        texGroup.push_back (addKnob (k.first, k.second));
+        { auto* kn = addKnob (k.first, k.second); texGroup.push_back (kn); texGrains.push_back (kn); }
+    {
+        const char* vn[2] = { "GRAINS", "SHAPE" };
+        for (int i = 0; i < 2; ++i)
+        {
+            texViewBtn[i] = std::make_unique<ui::StoneButton> (vn[i], true, false); texViewBtn[i]->textScale = 0.4f; texViewBtn[i]->setTooltip (help::forName (vn[i]));
+            texViewBtn[i]->onClick = [this, i] { texView = i; updateTextureView(); repaint(); }; addAndMakeVisible (*texViewBtn[i]); texGroup.push_back (texViewBtn[i].get());
+        }
+        texGroup.push_back (addNoteToggle ("tex_indep", "OWN FILE", 0.38f));
+        loadTex = std::make_unique<ui::StoneButton> ("LOAD TEXTURE", true, false); loadTex->textScale = 0.3f; loadTex->setTooltip (help::forName ("LOAD TEXTURE")); addAndMakeVisible (*loadTex); texGroup.push_back (loadTex.get());
+        loadTex->onClick = [this]
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Choose a file for the texture", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg;*.m4a");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
+            { auto f = fc.getResult(); if (f.existsAsFile() && proc.loadTextureFile (f)) { if (auto* q = proc.apvts.getParameter ("tex_indep")) q->setValueNotifyingHost (1.0f); repaint(); } });
+        };
+        auto add = [this] (juce::Component* c, bool ownOnly) { texGroup.push_back (c); texShape.push_back (c); if (ownOnly) texOwnOnly.push_back (c); };
+        add (addStepper ("tex_root", "Root", texGroup), true); add (addStepper ("tex_octave", "Octave", texGroup), true);
+        add (addKnob ("tex_tune_ct", "Tune"), true); add (addNoteToggle ("tex_normalize", "NORMALIZE", 0.3f), true);
+        add (addNoteToggle ("tex_env_own", "OWN ENVELOPE", 0.28f), true);
+        for (auto k : { std::make_pair ("tex_attack_ms", "Attack"), { "tex_decay_ms", "Decay" }, { "tex_sustain", "Sustain" }, { "tex_release_ms", "Release" } }) add (addKnob (k.first, k.second), true);
+        add (addNoteToggle ("tex_filter_on", "FILTER", 0.36f), false); add (addStepper ("tex_filter_type", "Type", texGroup), false);
+        add (addKnob ("tex_cutoff_hz", "Cutoff"), false); add (addKnob ("tex_reso", "Reso"), false); add (addStepper ("tex_route", "Route", texGroup), false);
+    }
 
     // ---- XY pad overlay (double-click the picture to open it) ----
     xyPad = std::make_unique<ui::XyPad> (proc); xyPad->onDoubleClick = [this] { showXy (false); }; addChildComponent (*xyPad);
@@ -337,15 +413,23 @@ RelicEditor::RelicEditor (RelicProcessor& p)
         addStepper ((t + "_shape").toRawUTF8(), "Shape", modGroup); addStepper ((t + "_sync").toRawUTF8(), "Sync", modGroup);
         modGroup.push_back (addKnob ((t + "_rate_hz").toRawUTF8(), "Rate"));
     }
-    for (int n = 1; n <= 4; ++n)
+    for (int n = 1; n <= 8; ++n)
     {
         const juce::String t = "mod" + juce::String (n);
-        addStepper ((t + "_src").toRawUTF8(), "Source", modGroup); addStepper ((t + "_dst").toRawUTF8(), "Target", modGroup);
-        amountSliders.push_back (std::make_unique<ui::AmountSlider> (proc.apvts, t + "_amt", "AMOUNT")); amountSliders.back()->setTooltip (help::forId (t + "_amt")); addAndMakeVisible (*amountSliders.back()); modGroup.push_back (amountSliders.back().get());
+        addStepper ((t + "_src").toRawUTF8(), "Source", modGroup); addStepper ((t + "_dst").toRawUTF8(), "Target", modGroup); addStepper ((t + "_range").toRawUTF8(), "Range", modGroup);
+        for (auto k : { std::make_pair ("_amt", "AMOUNT"), { "_curve", "CURVE" } })
+        {
+            amountSliders.push_back (std::make_unique<ui::AmountSlider> (proc.apvts, t + k.first, k.second)); amountSliders.back()->setTooltip (help::forId (t + k.first)); addAndMakeVisible (*amountSliders.back()); modGroup.push_back (amountSliders.back().get());
+        }
+    }
+    for (int i = 0; i < 2; ++i)
+    {
+        modPageBtn[i] = std::make_unique<ui::StoneButton> (i == 0 ? "SLOTS 1-4" : "SLOTS 5-8", true, false); modPageBtn[i]->textScale = 0.34f; modPageBtn[i]->setTooltip (help::forName ("SLOTS"));
+        modPageBtn[i]->onClick = [this, i] { modPage = i; updateModView(); }; addAndMakeVisible (*modPageBtn[i]); modGroup.push_back (modPageBtn[i].get());
     }
     addNoteToggle ("vib_on", "VIB", 0.42f); addNoteToggle ("porta_on", "PORTA", 0.38f);
     for (auto id : { "lfo1_keysync", "lfo2_keysync" }) modGroup.push_back (addNoteToggle (id, "KEY SYNC", 0.36f));
-    addKnob ("vib_rate_hz", "V.Rate"); addKnob ("vib_depth_ct", "V.Depth"); addKnob ("porta_ms", "Glide");
+    addKnob ("vib_rate_hz", "V.Rate"); addKnob ("vib_depth_ct", "V.Depth"); addKnob ("porta_ms", "Glide"); addKnob ("vib_delay_ms", "V.Delay"); addKnob ("vib_fade_ms", "V.Fade");
 
     // ---- sidebar: the eight icon buttons, and the CRAFT / UNDO / REDO / CHAOS buttons over the picture ----
     const char* side[8] = { "Presets", "Chords", "One-shots", "Textures", "Expand", "History", "Save", "Init" };
@@ -437,6 +521,22 @@ RelicEditor::RelicEditor (RelicProcessor& p)
     keyboard.setColour (juce::MidiKeyboardComponent::shadowColourId, juce::Colours::transparentBlack);
     addAndMakeVisible (keyboard);
 
+    // tempo-sync chips: each sits over the top-right corner of its rate / time knob and shows FREE or the note value
+    for (auto pr : { std::make_pair ("trem_rate_hz", "trem_sync"), { "pan_rate_hz", "pan_sync" }, { "chorus_rate_hz", "chorus_sync" }, { "flanger_rate_hz", "flanger_sync" }, { "wah_rate_hz", "wah_sync" },
+                     { "vib_rate_hz", "vib_sync" }, { "delay_time_ms", "delay_sync" }, { "pdelay_time_ms", "pdelay_sync" } })
+    {
+        SyncChip sc; sc.knobId = pr.first; sc.syncId = pr.second;
+        sc.btn = std::make_unique<ui::StoneButton> ("FREE", true, false); sc.btn->textScale = 0.34f; sc.btn->setTooltip (help::forName ("SYNC CHIP"));
+        const juce::String sid = pr.second;
+        sc.btn->onClick = [this, sid]
+        {
+            auto* c = choiceParam (proc.apvts, sid.toRawUTF8()); if (c == nullptr) return;
+            juce::PopupMenu m; m.addSectionHeader ("TEMPO SYNC  (Free = use the knob)");
+            for (int i = 0; i < c->choices.size(); ++i) m.addItem (1 + i, c->choices[i], true, i == c->getIndex());
+            m.showMenuAsync (juce::PopupMenu::Options(), [this, sid] (int r) { if (r > 0) setChoice (sid.toRawUTF8(), r - 1); updateSyncChips(); });
+        };
+        addChildComponent (*sc.btn); syncChips.push_back (std::move (sc));
+    }
     setResizeLimits (742, 530, 2226, 1590);
     setResizable (true, true);
     getConstrainer()->setFixedAspectRatio ((double) DW / DH);
@@ -491,23 +591,80 @@ void RelicEditor::mouseDoubleClick (const juce::MouseEvent& e)
     if (! xyShown && juce::Rectangle<float> (124, 112, 384, 426).contains (e.position / s)) showXy (true);
 }
 
+// Shows the controls of the sample slot being edited. The envelope knobs edit the voice envelope until the slot is given an envelope of its own.
+void RelicEditor::updateSamplerView()
+{
+    if (currentTab != 0 || sampDisp == nullptr) return;
+    const bool b = sampSlot == 1;
+    const bool ownA = proc.apvts.getRawParameterValue ("sample_env_own")->load() > 0.5f, ownB = proc.apvts.getRawParameterValue ("sampleb_env_own")->load() > 0.5f;
+    const bool indep = proc.apvts.getRawParameterValue ("sampleb_indep")->load() > 0.5f, ownSel = b ? ownB : ownA;
+    auto show = [] (std::vector<juce::Component*>& v, bool on) { for (auto* c : v) c->setVisible (on); };
+    show (sampSetA, ! b); show (sampSetB, b);
+    show (sampEnvVoice, ! ownSel); show (sampEnvA, ! b && ownA); show (sampEnvB, b && ownB);
+    // slot B's own settings only count once B is a layer of its own; until then they are shown dimmed
+    for (auto* c : sampSetB) c->setAlpha (c == sampButtons[9].get() || indep ? 1.0f : 0.45f);
+    for (auto* c : sampEnvB) c->setAlpha (indep ? 1.0f : 0.45f);
+    for (int i = 0; i < 2; ++i) slotBtn[i]->setToggleState (i == sampSlot, juce::dontSendNotification);
+    sampDisp->setSlot (sampSlot);
+}
+
+void RelicEditor::updateModView()
+{
+    if (modPageBtn[0] == nullptr) return;
+    const bool on = currentTab == 7;
+    for (int n = 1; n <= 8; ++n)
+    {
+        const bool show = on && (n <= 4) == (modPage == 0); const juce::String t = "mod" + juce::String (n);
+        steppers[(t + "_src").toRawUTF8()]->setVisible (show); steppers[(t + "_dst").toRawUTF8()]->setVisible (show); steppers[(t + "_range").toRawUTF8()]->setVisible (show);
+        amountSliders[(size_t) (2 * (n - 1))]->setVisible (show); amountSliders[(size_t) (2 * (n - 1) + 1)]->setVisible (show);
+    }
+    for (int i = 0; i < 2; ++i) modPageBtn[i]->setToggleState (i == modPage, juce::dontSendNotification);
+}
+
+void RelicEditor::updateChordView()
+{
+    if (shapeEditor == nullptr || currentTab != 6) return;
+    const bool custom = (int) proc.apvts.getRawParameterValue ("chord_mode")->load() == 2;
+    shapeEditor->setVisible (custom); chordDisp->setVisible (! custom);
+}
+
+void RelicEditor::updateArpView()
+{
+    if (patternLane == nullptr || currentTab != 5) return;
+    const bool custom = (int) proc.apvts.getRawParameterValue ("arp_mode")->load() == 8;
+    patternLane->setVisible (custom); arpDisp->setVisible (! custom);
+}
+
+void RelicEditor::updateTextureView()
+{
+    if (currentTab != 11 || texViewBtn[0] == nullptr) return;
+    for (auto* c : texGrains) c->setVisible (texView == 0);
+    for (auto* c : texShape) c->setVisible (texView == 1);
+    const bool own = proc.apvts.getRawParameterValue ("tex_indep")->load() > 0.5f;
+    for (auto* c : texOwnOnly) c->setAlpha (own ? 1.0f : 0.45f);   // these only count once the texture plays its own file
+    for (int i = 0; i < 2; ++i) texViewBtn[i]->setToggleState (i == texView, juce::dontSendNotification);
+}
+
 void RelicEditor::setTab (int t)
 {
-    currentTab = t;
+    currentTab = t; struct Later { RelicEditor* e; ~Later() { e->updateSyncChips(); } } later { this };
     for (int i = 0; i < 11; ++i) tabs[i]->setToggleState (i == t, juce::dontSendNotification);
     for (auto* c : oscGroup) c->setVisible (t == 1);
     for (auto* c : sampGroup) c->setVisible (t == 0);
-    meter->setVisible (t == 0 || t == 1);
+    meter->setVisible (t == 1);
     for (auto* c : fxGroup)  c->setVisible (t == 2);
     for (auto* c : fx2Group) c->setVisible (t == 3);
     for (auto* c : fx3Group) c->setVisible (t == 4);
     for (auto* c : arpGroup) c->setVisible (t == 5);
     for (auto* c : chordGroup) c->setVisible (t == 6);
     for (auto* c : modGroup) c->setVisible (t == 7);
+    updateModView();
     for (auto* c : osc23Group) c->setVisible (t == 8);
     for (auto* c : envGroup) c->setVisible (t == 9);
     for (auto* c : fx4Group) c->setVisible (t == 10);
     for (auto* c : texGroup) c->setVisible (t == 11);
+    updateTextureView(); updateArpView(); updateChordView();
+    updateSamplerView();
     repaint();
 }
 
@@ -516,9 +673,11 @@ void RelicEditor::timerCallback()
     noteToggles["arp_run"]->setButtonText (proc.apvts.getRawParameterValue ("arp_run")->load() > 0.5f ? "GO" : "STOP");
     fxAB->setButtonText (proc.fxSlotActive() == 0 ? "EFFECTS A" : "EFFECTS B"); fxAB->setToggleState (proc.fxSlotActive() == 1, juce::dontSendNotification);
     splitBtn->setButtonText (proc.apvts.getRawParameterValue ("split_on")->load() > 0.5f ? "SPLIT " + juce::MidiMessage::getMidiNoteName ((int) proc.apvts.getRawParameterValue ("split_note")->load(), true, true, 3) : juce::String ("SPLIT"));
+    updateSamplerView(); updateTextureView(); updateArpView(); updateChordView(); updateSyncChips();
     proc.historyTick(); undoBtn->setEnabled (proc.canUndo()); redoBtn->setEnabled (proc.canRedo()); lockFxBtn->setToggleState (proc.lockFx.load(), juce::dontSendNotification);
     if (proc.getPresetName() != lastPresetName) { lastPresetName = proc.getPresetName(); repaint (R (600, 690, 590, 52)); }
     if (auto* c = choiceParam (proc.apvts, "waveform")) waveName->setButtonText (c->getCurrentChoiceName().toUpperCase());
+    {   const auto wn = proc.getWavetableName(); if (wn != lastWtName) { lastWtName = wn; wtName->setButtonText (wn.isEmpty() ? juce::String ("LOAD A WAVETABLE...") : wn.toUpperCase().substring (0, 30)); wave->repaint(); } }
     const int ftIdx = (int) proc.apvts.getRawParameterValue ("filter_type")->load();
     for (int i = 0; i < 4; ++i) ftype[i]->setToggleState (i == ftIdx, juce::dontSendNotification);
     polyBtn->setToggleState (proc.apvts.getRawParameterValue ("voices")->load() > 1.5f, juce::dontSendNotification);
@@ -572,7 +731,7 @@ void RelicEditor::paint (juce::Graphics& g)
     {
         g.setColour (display); g.fillRoundedRectangle (556, 170, 716, 462, 8.0f); g.setColour (goldDim); g.drawRoundedRectangle (556, 170, 716, 462, 8.0f, 2.0f);
         g.setColour (parchment); ui::drawText (g, "TEXTURE", juce::Rectangle<float> (556, 176, 716, 28), 22, juce::Justification::centred);
-        g.setColour (lime.withAlpha (0.7f)); ui::drawText (g, proc.getSample() ? "A CLOUD OF GRAINS FROM THE LOADED SAMPLE, PLAYED BY THE KEYS" : "LOAD A SAMPLE ON THE SAMPLER TAB FIRST", juce::Rectangle<float> (556, 214, 716, 22), 14, juce::Justification::centred);
+        g.setColour (lime.withAlpha (0.7f)); ui::drawText (g, (proc.apvts.getRawParameterValue ("tex_indep")->load() > 0.5f ? (proc.getSampleT() ? "A CLOUD OF GRAINS FROM THE TEXTURE FILE" : "OWN FILE IS ON: LOAD A TEXTURE FILE") : (proc.getSample() ? "A CLOUD OF GRAINS FROM THE LOADED SAMPLE, PLAYED BY THE KEYS" : "LOAD A SAMPLE ON THE SAMPLER TAB FIRST")), juce::Rectangle<float> (556, 214, 716, 22), 14, juce::Justification::centred);
     }
     if (currentTab == 10)
     {
@@ -660,22 +819,34 @@ void RelicEditor::resized()
     for (int i = 0; i < 11; ++i) tabs[i]->setBounds (R (548 + i * 66.0f, 102, 62, 44));
 
     // OSC tab
-    wave->setBounds (R (548, 156, 724, 232)); env->setBounds (R (548, 394, 360, 82)); meter->setBounds (R (1176, 490, 92, 150));
+    wave->setBounds (R (548, 156, 724, 190));
+    noteToggles["wt_use_file"]->setBounds (R (548, 350, 110, 38)); wtPrev->setBounds (R (664, 350, 40, 38)); wtName->setBounds (R (708, 350, 330, 38)); wtNext->setBounds (R (1042, 350, 40, 38)); wtLoad->setBounds (R (1086, 350, 186, 38)); env->setBounds (R (548, 394, 360, 82)); meter->setBounds (R (1176, 490, 92, 150));
     const char* oscIds[6] = { "pulse_width", "osc_level", "unison_voices", "unison_detune", "unison_spread", "voices" };
     for (int i = 0; i < 6; ++i) K (oscIds[i])->setBounds (R (928 + (i % 3) * 82.0f, 396 + (i / 3) * 124.0f, 76, 118));
     const char* adsr[4] = { "attack_ms", "decay_ms", "sustain", "release_ms" };
     for (int i = 0; i < 4; ++i) K (adsr[i])->setBounds (R (556 + i * 92.0f, 486, 86, 156));
 
     // SAMPLER tab
-    sampDisp->setBounds (R (548, 156, 724, 158));
-    sampButtons[0]->setBounds (R (548, 394, 176, 38)); sampButtons[1]->setBounds (R (732, 394, 176, 38));
-    sampButtons[2]->setBounds (R (548, 438, 176, 38)); sampButtons[3]->setBounds (R (732, 438, 176, 38));
-    for (int i = 0; i < 6; ++i) sampKnobs[(size_t) i]->setBounds (R (928 + (i % 3) * 82.0f, 396 + (i / 3) * 124.0f, 76, 118));
-    for (int i = 0; i < 4; ++i) sampKnobs[(size_t) (6 + i)]->setBounds (R (556 + i * 92.0f, 486, 86, 156));
+    sampDisp->setBounds (R (548, 156, 724, 158)); kitBtn->setBounds (R (1196, 160, 72, 30));
+    // Left: slot selector and the buttons of the slot being edited (the A and B sets share the same places). Right: a 6 x 2 knob grid.
+    slotBtn[0]->setBounds (R (548, 394, 112, 38)); slotBtn[1]->setBounds (R (668, 394, 112, 38));
+    sampButtons[0]->setBounds (R (548, 438, 112, 38));
+    for (int k = 0; k < 2; ++k)
+    {
+        const size_t o = k == 0 ? 1 : 4;
+        sampButtons[o]->setBounds (R (668, 438, 112, 38)); sampButtons[o + 1]->setBounds (R (548, 482, 112, 38)); sampButtons[o + 2]->setBounds (R (668, 482, 112, 38));
+        sampButtons[(size_t) (7 + k)]->setBounds (R (548, 526, 112, 38));
+    }
+    sampButtons[9]->setBounds (R (668, 526, 112, 38));
+    auto cell = [] (int col, int row) { return juce::Rectangle<float> (790.0f + col * 78.0f, 396.0f + row * 124.0f, 74.0f, 118.0f); };
+    for (auto* list : { &sampKnobsA, &sampKnobsB })
+        for (size_t i = 0; i < list->size(); ++i) { const auto c = i < 6 ? cell ((int) i, 0) : cell ((int) i - 6, 1); (*list)[i]->setBounds (R (c.getX(), c.getY(), c.getWidth(), c.getHeight())); }
+    for (auto* list : { &envKnobsVoice, &envKnobsA, &envKnobsB })
+        for (size_t i = 0; i < list->size(); ++i) { const auto c = cell (2 + (int) i, 1); (*list)[i]->setBounds (R (c.getX(), c.getY(), c.getWidth(), c.getHeight())); }
     mixSlider->setBounds (R (610, 740, 570, 46));
     loadB->setBounds (R (870, 786, 92, 36)); abSlider->setBounds (R (970, 778, 220, 46));
     noteToggles["chop_on"]->setBounds (R (548, 340, 110, 44));
-    { const char* cs[5] = { "chop_mode", "chop_count", "chop_grid", "chop_pitch", "loop_xfade" }; for (int i = 0; i < 5; ++i) steppers[cs[i]]->setBounds (R (668 + i * 121.0f, 322, 116, 66)); }
+    { const char* cs[5] = { "chop_mode", "chop_count", "chop_grid", "chop_pitch", "loop_xfade" }; for (int i = 0; i < 5; ++i) steppers[cs[i]]->setBounds (R (668 + i * 121.0f, 322, 116, 66)); steppers["sampleb_xfade"]->setBounds (R (668 + 4 * 121.0f, 322, 116, 66)); }
 
     // Knob rows start at the same height in every effect panel, with roomier spacing when a panel has only two rows.
     auto rowY = [] (int rows, int row, float shift = 0.0f) { const float pitch = rows >= 3 ? 124.0f : 150.0f; return 268.0f + shift + (float) row * pitch; };
@@ -707,8 +878,17 @@ void RelicEditor::resized()
     xyPad->setBounds (R (124, 112, 384, 426)); K ("macro_1")->setBounds (R (168, 412, 120, 120)); K ("macro_2")->setBounds (R (346, 412, 120, 120));
 
     // TEXTURE tab
+    texViewBtn[0]->setBounds (R (566, 246, 130, 38)); texViewBtn[1]->setBounds (R (704, 246, 130, 38));
+    noteToggles["tex_indep"]->setBounds (R (860, 246, 170, 38)); loadTex->setBounds (R (1040, 246, 220, 38));
     { const char* ids[6] = { "tex_level", "tex_pos", "tex_spread", "tex_size_ms", "tex_density", "tex_jitter_ct" };
-      for (int i = 0; i < 6; ++i) K (ids[i])->setBounds (R (580 + (i % 3) * 230.0f, 256 + (i / 3) * 190.0f, 170, 176)); }
+      for (int i = 0; i < 6; ++i) K (ids[i])->setBounds (R (580 + (i % 3) * 230.0f, 300 + (i / 3) * 166.0f, 170, 156)); }
+    steppers["tex_root"]->setBounds (R (566, 298, 170, 70)); steppers["tex_octave"]->setBounds (R (744, 298, 170, 70));
+    noteToggles["tex_normalize"]->setBounds (R (930, 314, 150, 38)); K ("tex_tune_ct")->setBounds (R (1110, 292, 100, 116));
+    noteToggles["tex_env_own"]->setBounds (R (566, 440, 150, 38));
+    { const char* ids[4] = { "tex_attack_ms", "tex_decay_ms", "tex_sustain", "tex_release_ms" };
+      for (int i = 0; i < 4; ++i) K (ids[i])->setBounds (R (730 + i * 130.0f, 416, 100, 108)); }
+    noteToggles["tex_filter_on"]->setBounds (R (566, 566, 110, 38)); steppers["tex_filter_type"]->setBounds (R (684, 548, 150, 70));
+    K ("tex_cutoff_hz")->setBounds (R (846, 530, 100, 100)); K ("tex_reso")->setBounds (R (954, 530, 100, 100)); steppers["tex_route"]->setBounds (R (1070, 548, 190, 70));
 
     // ENV tab
     for (int n = 1; n <= 2; ++n)
@@ -762,14 +942,15 @@ void RelicEditor::resized()
         K ((t + "_rate_hz").toRawUTF8())->setBounds (R (x0 + 10, 264, 92, 84));
         noteToggles[t + "_keysync"]->setBounds (R (x0 + 150, 286, 150, 40));
     }
-    for (int n = 1; n <= 4; ++n)
+    modPageBtn[0]->setBounds (R (558, 356, 130, 32)); modPageBtn[1]->setBounds (R (696, 356, 130, 32));
+    for (int n = 1; n <= 8; ++n)
     {
-        const juce::String t = "mod" + juce::String (n); const float y = 394 + (n - 1) * 60.0f;
-        steppers[(t + "_src").toRawUTF8()]->setBounds (R (558, y, 200, 56)); steppers[(t + "_dst").toRawUTF8()]->setBounds (R (766, y, 220, 56));
-        amountSliders[(size_t) (n - 1)]->setBounds (R (996, y + 4, 266, 50));
+        const juce::String t = "mod" + juce::String (n); const float y = 394 + ((n - 1) % 4) * 60.0f;
+        steppers[(t + "_src").toRawUTF8()]->setBounds (R (554, y, 150, 56)); steppers[(t + "_dst").toRawUTF8()]->setBounds (R (708, y, 160, 56)); steppers[(t + "_range").toRawUTF8()]->setBounds (R (872, y, 100, 56));
+        amountSliders[(size_t) (2 * (n - 1))]->setBounds (R (978, y + 4, 160, 50)); amountSliders[(size_t) (2 * (n - 1) + 1)]->setBounds (R (1142, y + 4, 128, 50));
     }
     noteToggles["vib_on"]->setBounds (R (1300, 700, 80, 44)); noteToggles["porta_on"]->setBounds (R (1388, 700, 80, 44));
-    K ("vib_rate_hz")->setBounds (R (1298, 752, 84, 100)); K ("vib_depth_ct")->setBounds (R (1386, 752, 84, 100)); K ("porta_ms")->setBounds (R (1342, 846, 84, 92));
+    K ("vib_rate_hz")->setBounds (R (1298, 752, 84, 100)); K ("vib_depth_ct")->setBounds (R (1386, 752, 84, 100)); K ("vib_delay_ms")->setBounds (R (1298, 846, 84, 92)); K ("vib_fade_ms")->setBounds (R (1386, 846, 84, 92)); K ("porta_ms")->setBounds (R (1342, 942, 84, 92));
 
     // master / filter
     K ("master")->setBounds (R (1316, 106, 132, 72));
@@ -792,8 +973,8 @@ void RelicEditor::resized()
     browser->setBounds (R (548, 150, 724, 494));
 
     // CHORDS and ARP tabs
-    chordDisp->setBounds (R (548, 156, 724, 170)); arpDisp->setBounds (R (548, 156, 724, 96));
-    rhythmLane->setBounds (R (548, 258, 724, 76));
+    chordDisp->setBounds (R (548, 156, 724, 170)); shapeEditor->setBounds (R (548, 156, 724, 170)); arpDisp->setBounds (R (548, 156, 724, 96));
+    rhythmLane->setBounds (R (548, 258, 724, 76)); patternLane->setBounds (R (548, 156, 724, 96));
     const float colX[4] = { 548, 728, 908, 1088 };
     steppers["chord_key"]->setBounds (R (colX[0], 340, 172, 70)); steppers["chord_scale"]->setBounds (R (colX[1], 340, 172, 70));
     steppers["chord_type"]->setBounds (R (colX[2], 340, 172, 70)); steppers["chord_voicing"]->setBounds (R (colX[3], 340, 172, 70));
@@ -820,4 +1001,53 @@ void RelicEditor::resized()
     keyboard.setBounds (R (636, 832, 570, 118));
     keyboard.setKeyWidth ((float) keyboard.getWidth() / 21.0f);
     (void) kw;
+}
+
+// ---- wavetable file strip ----
+void RelicEditor::afterWavetableLoaded()
+{
+    if (auto* q = proc.apvts.getParameter ("wt_use_file")) q->setValueNotifyingHost (1.0f);          // hear it straight away
+    if (auto* w = choiceParam (proc.apvts, "waveform")) if (w->getIndex() != 4) w->setValueNotifyingHost (w->convertTo0to1 (4.0f));   // and make the oscillator a Wavetable
+    repaint();
+}
+
+void RelicEditor::loadWavetableDialog()
+{
+    auto start = proc.getWavetableFile(); start = start.existsAsFile() ? start.getParentDirectory() : RelicProcessor::wavetablesRoot();
+    RelicProcessor::wavetablesRoot().createDirectory();
+    chooser = std::make_unique<juce::FileChooser> ("Choose a wavetable (single-cycle frames end to end, 2048 samples each)", start, "*.wav;*.aif;*.aiff;*.flac");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
+    { auto f = fc.getResult(); if (f.existsAsFile() && proc.loadWavetableFile (f)) afterWavetableLoaded(); else repaint(); });
+}
+
+void RelicEditor::showWavetableMenu()
+{
+    const auto cur = proc.getWavetableFile();
+    const auto dir = cur.existsAsFile() ? cur.getParentDirectory() : RelicProcessor::wavetablesRoot();
+    const auto files = RelicProcessor::scanWavetables (dir);
+    juce::PopupMenu m; m.addSectionHeader ("WAVETABLES  (" + dir.getFullPathName() + ")");
+    if (files.empty()) m.addItem (1, "No wavetable files here: LOAD FILE finds one anywhere", false);
+    for (size_t i = 0; i < files.size() && i < 400; ++i) m.addItem (1000 + (int) i, files[i].getRelativePathFrom (dir).replaceCharacter ('\\', '/'), true, files[i] == cur);
+    m.addSeparator(); m.addItem (2, "Open the folder"); m.addItem (3, "Use the built-in wavetable", cur.existsAsFile());
+    m.showMenuAsync (juce::PopupMenu::Options(), [this, files, dir] (int r)
+    {
+        if (r == 2) { dir.createDirectory(); dir.revealToUser(); }
+        else if (r == 3) { proc.clearWavetable(); if (auto* q = proc.apvts.getParameter ("wt_use_file")) q->setValueNotifyingHost (0.0f); repaint(); }
+        else if (r >= 1000 && r - 1000 < (int) files.size() && proc.loadWavetableFile (files[(size_t) (r - 1000)])) afterWavetableLoaded();
+    });
+}
+
+void RelicEditor::updateSyncChips()
+{
+    for (auto& sc : syncChips)
+    {
+        auto* k = K (sc.knobId.toRawUTF8()); auto* c = choiceParam (proc.apvts, sc.syncId.toRawUTF8()); if (k == nullptr || c == nullptr) continue;
+        const bool synced = c->getIndex() != 0, show = k->isVisible();
+        sc.btn->setVisible (show);
+        if (! show) continue;
+        const auto kb = k->getBounds(); const int w = juce::jmax (30, kb.getWidth() / 2), h = juce::jmax (14, kb.getHeight() / 6);
+        sc.btn->setBounds (kb.getRight() - w, kb.getY(), w, h);
+        sc.btn->setButtonText (synced ? c->getCurrentChoiceName() : juce::String ("FREE")); sc.btn->setToggleState (synced, juce::dontSendNotification);
+        k->setAlpha (synced ? 0.5f : 1.0f);
+    }
 }

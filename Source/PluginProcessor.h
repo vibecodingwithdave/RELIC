@@ -20,7 +20,12 @@ struct SampleData
     int frames() const { return (int) L.size(); }
 };
 
-struct PresetEntry { juce::String bank, name, category; juce::File file; };
+// Which part of the sound a preset holds. A "partial" preset carries only that part, and loading it leaves every other control as it is.
+enum class PresetPart { Full = 0, Synth, Sample, Mod, Effects, Notes };
+inline const juce::StringArray& presetPartNames() { static const juce::StringArray n { "Full", "Synth", "Sample", "Modulation", "Effects", "Arp & Chords" }; return n; }
+PresetPart presetPartOfParam (const juce::String& paramId);      // the part a control belongs to (never Full)
+
+struct PresetEntry { juce::String bank, name, category, part; juce::File file; };      // part: empty for a full preset, else its type name
 
 // The categories shown in the preset browser. A preset whose category is empty or unknown counts as "Other".
 inline const juce::StringArray& presetCategories()
@@ -61,8 +66,9 @@ public:
     static juce::File presetsRoot();
     std::vector<PresetEntry> scanPresets() const;                 // factory, user and imported presets on disk
     bool loadPresetFile (const juce::File& f);                    // message thread
+    bool loadPresetPart (const juce::XmlElement& xml, PresetPart part);   // applies only that part of a sound
     void initPreset();                                            // every control back to its default, no sample
-    juce::File savePreset (const juce::String& name, const juce::String& category = {});   // saves to Presets/User
+    juce::File savePreset (const juce::String& name, const juce::String& category = {}, PresetPart part = PresetPart::Full);   // saves to Presets/User
     juce::String getPresetName() const { return apvts.state.getProperty ("presetName", "Init").toString(); }
     juce::String getPresetBank() const { return apvts.state.getProperty ("presetBank", "").toString(); }
     juce::String getPresetCategory() const { return apvts.state.getProperty ("presetCategory", "").toString(); }
@@ -71,8 +77,22 @@ public:
     bool loadSampleFile (const juce::File& f, bool setMixToSample = true, bool slotB = false);      // message thread
     void clearSampleB();
     std::shared_ptr<const SampleData> getSampleB() const { const juce::SpinLock::ScopedLockType l (sampleLock); return sampleB; }
+    std::shared_ptr<const SampleData> getSampleT() const { const juce::SpinLock::ScopedLockType l (sampleLock); return sampleT; }
+    bool loadTextureFile (const juce::File& f);
+    std::shared_ptr<SampleData> decodeSample (const juce::File& f);      // reads and analyses a file; sets sampleError and returns null on failure
+    void clearTexture();
     void clearSample();
     std::shared_ptr<const SampleData> getSample() const { const juce::SpinLock::ScopedLockType l (sampleLock); return sample; }
+    // ---- external wavetable (used by every oscillator set to Wavetable while "wt_use_file" is on) ----
+    static juce::File wavetablesRoot();                                   // the user's wavetable folder: loading starts here
+    bool loadWavetableFile (const juce::File& f);                         // message thread; false (and sampleError set) when the file is unusable
+    void clearWavetable();
+    juce::File getWavetableFile() const { return juce::File (apvts.state.getProperty ("wavetablePath").toString()); }
+    juce::String getWavetableName() const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser != nullptr ? juce::String (wtUser->name) : juce::String(); }
+    std::shared_ptr<const rf::WaveTables::UserBank> getWavetableBank() const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser; }
+    int getWavetableFrames() const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser != nullptr ? wtUser->frames : 0; }
+    static std::vector<juce::File> scanWavetables (const juce::File& folder);   // every wav / aiff / flac under the folder, in natural order
+    bool stepWavetable (int dir);                                         // loads the next / previous file in the loaded file's folder
     juce::String sampleError;
     std::atomic<int> arpStepShown { -1 }, chordDegreeShown { -1 };      // for the displays
     std::atomic<bool> arpWaitingShown { true };
@@ -108,16 +128,21 @@ private:
     {
         bool active = false;
         int note = -1; float velocity = 0.0f; unsigned long long age = 0;
+        double vibPh = 0.0; unsigned long long vibAge = 0;   // this note's own vibrato phase and age in samples (used when the vibrato has a delay or fade-in)
         double phase[7] {}; double phaseX[2] {};   // phaseX: oscillators 2 and 3
         double samplePos = 0.0; bool sampleActive = false;
+        double samplePosB = 0.0; bool sampleActiveB = false;   // slot B when it plays as its own layer
         double baseHz = 440.0; float glide = 0.0f;       // glide: semitones still to travel
         struct Grain { float pos = 0, step = 1, gl = 1, gr = 1; int age = 0, len = 0; bool on = false; };
-        Grain grains[12]; float grainTimer = 0.0f; unsigned int gseed = 1;       // texture layer
+        Grain grains[12]; float grainTimer = 0.0f; unsigned int gseed = 1; float modRand = 0.0f;       // texture layer; modRand: the Random modulation source for this note
         float ks[8192] {}; int ksPos = 0; float ksLp = 0.0f;                    // plucked-string model
         float bellAmp[6] {}; unsigned int nseed = 1;                            // bell model
         int zone = 0;                                                           // keyboard split: 0 none, 1 sample only, 2 synth only
-        bool chop = false; double sliceA = 0.0, sliceB = 0.0;   // chop voice: slice bounds in frames
+        bool chop = false; double sliceA = 0.0, sliceB = 0.0; int choke = 0; bool chopRev = false; double chopRateMul = 1.0; float chopMul = 1.0f;   // kit settings of the pad this voice plays
+          // chop voice: slice bounds in frames
         rf::Adsr env, menv[2];                           // amp envelope; two modulation envelopes
+        rf::Adsr envA, envB, envT;                       // optional own envelopes of sample layers A and B and of the texture
+        rf::Svf ftl, ftr;                                // the texture's own filter
         rf::Svf fl, fr, fl2, fr2; float mpL = 0.0f, mpR = 0.0f;   // fl2/fr2: second pole pair for the cascaded models; mp*: MPC60 output low-pass state
     };
     static constexpr int MaxVoices = 16;
@@ -129,6 +154,12 @@ private:
     mutable juce::SpinLock sampleLock;
     std::shared_ptr<const SampleData> sample, audioSample;   // audioSample is the audio thread's copy
     std::shared_ptr<const SampleData> sampleB, audioSampleB;  // slot B (A/B morph)
+    std::shared_ptr<const SampleData> sampleT, audioSampleT;  // the texture's own file (used when "tex_indep" is on)
+    struct WtRaw { std::vector<float> data; int frameLen = 0; std::string name; };
+    std::shared_ptr<const WtRaw> wtRaw;                                   // the file's samples, kept so a sample-rate change can rebuild the bank
+    std::shared_ptr<const rf::WaveTables::UserBank> wtUser, audioWt;      // audioWt is the audio thread's copy
+    const rf::WaveTables::UserBank* curWt = nullptr;                      // the bank this block plays (null: built-in)
+    void rebuildWavetable();
     rf::WaveTables tables;
     rf::Tremolo trem; rf::Panner panner; rf::PingPongDelay delay; rf::Compressor comp; rf::Crusher crush; rf::Chorus chorus; rf::Flanger flanger; rf::Reverb reverb;
     rf::Equalizer eq; rf::Tape tape; rf::Widener widener; rf::Wah wah; rf::LoFi lofi; rf::Ott ott; rf::PitchDelay pdelay; rf::TalkBox talk; rf::SpectralGate sgate; std::vector<int> leadHeld;
@@ -140,13 +171,18 @@ private:
     void noteOn (int note, float vel);
     void noteOff (int note);
     void renderSegment (float* L, float* R, int n);
+    // Where a sample slot plays, in frames. "Trimmed" means an End point has been set; with End at its default the region is the old one
+    // (forward: Start to the last frame, reverse: last frame back to the beginning, Start ignored), so existing presets render as before.
+    struct SampleRegion { double startRaw = 0.0, startF = 0.0, endF = 0.0, revFloor = 0.0; bool trimmed = false; };
+    SampleRegion sampleRegion (double nF, const char* startId, const char* endId) const;
     float oscSample (int shape, double phase, double hz, float pw) const;
 
     std::vector<float> fxSlot[2]; int fxActive = 0;
     using Snap = std::vector<float>;
     Snap snapshot() const; void applySnap (const Snap&); void flushPending();
     std::vector<Snap> undoS, redoS; Snap cur, pending; int quiet = 0; juce::Random rng;
-    std::array<std::atomic<float>*, 16> rhythmTypes {}, rhythmVelocities {};
+    std::array<std::atomic<float>*, 16> rhythmTypes {}, rhythmVelocities {}; std::array<std::atomic<float>*, 64> patSteps {}; std::array<std::atomic<float>*, 7> degShapes {};
+    std::array<std::atomic<float>*, 16> kitSlice {}, kitPitch {}, kitRev {}, kitLevel {}, kitChoke {};
     std::atomic<float>* p (const char* id) const { return apvts.getRawParameterValue (id); }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RelicProcessor)

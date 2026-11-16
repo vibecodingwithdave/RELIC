@@ -18,6 +18,11 @@ struct ChordArpSettings
     bool chordOn = false; int key = 0, scale = 0, type = 0, inversion = 0, voicing = 0; bool lock = true; float strumMs = 0.0f;
     bool arpOn = false, hold = false, run = true; int rate = 10, mode = 0, octaves = 1, order = 0, grouping = 0, wshape = 0, chordMode = 0, shape = 0; bool voiceLead = false; float gate = 0.5f, swing = 0.0f, human = 0.0f;
     bool rhythmOn = false; int rhythmLength = 16; std::array<RhythmCell, 16> rhythm {};
+    // CUSTOM mode (arp_mode 8): a hand-made pattern of up to 64 steps (four 16-step bars). Each step is a note number in the held notes (0 = lowest, 1 = next,
+    // wrapping upward an octave at a time; negative numbers wrap downward).
+    int patLength = 16; std::array<int, 64> pattern {};
+    // CUSTOM chord mode (chord_mode 2): one chord shape for each scale degree. Bit i of a mask means 'the root plus i semitones' is in the chord (bits 0 to 21).
+    std::array<int, 7> degShape { 0x91, 0x89, 0x89, 0x91, 0x91, 0x89, 0x49 };   // the major scale's own triads: major, minor, minor, major, major, minor, diminished
     bool twoHand = false;   // 2-HAND: a slow low voice under the arp line (see NoteEngine::twoHandStep)
     // Relic's own design (the reference has no audible equivalent): CHANCE is the probability that a step plays (a dropped step is silent but the pattern still
     // moves on); SPRAY is the probability that a note that does play jumps one octave up or down at random.
@@ -90,6 +95,11 @@ inline std::vector<int> chordNotes (int note, const ChordArpSettings& s, int* de
     }
     std::vector<int> out;
     if (s.chordMode == 1) { for (int iv : fixedShape (s.shape)) out.push_back (note + iv); }      // FIXED: the same shape under every key, no scale
+    else if (diatonic && s.chordMode == 2)             // CUSTOM: the shape stored for this scale degree, built on the scale note
+    {
+        if (degreeOut) *degreeOut = d;
+        for (int i = 0; i < 22; ++i) if (s.degShape[(size_t) d] & (1 << i)) out.push_back (root + i);
+    }
     else if (diatonic)
     {
         if (degreeOut) *degreeOut = d;
@@ -131,6 +141,17 @@ inline std::string chordName (int degree, const ChordArpSettings& s)
 {
     ChordArpSettings c = s; c.chordOn = true; c.inversion = 0; c.voicing = 0; c.lock = true;
     if (s.chordMode == 1) return std::string (noteName (s.key + kScales[s.scale][degree])) + fixedShapeName (s.shape);
+    if (s.chordMode == 2)      // CUSTOM: name the stored shape from its intervals
+    {
+        const int m = s.degShape[(size_t) degree]; auto has = [&] (int iv) { return (m & (1 << iv)) != 0 || (m & (1 << (iv + 12))) != 0; };
+        std::string n = noteName (s.key + kScales[s.scale][degree]);
+        if (m == 0) return n + "?";
+        const bool minor3 = has (3), major3 = has (4), dim5 = has (6) && ! has (7), aug5 = has (8) && ! has (7);
+        if (! minor3 && ! major3) n += has (5) ? "sus4" : has (2) ? "sus2" : (has (7) ? "5" : "");
+        else if (minor3 && dim5) n += "dim"; else if (minor3) n += "m"; else if (major3 && aug5) n += "aug";
+        if (has (11)) n += "maj7"; else if (has (10)) n += "7";
+        if (m & (1 << 14)) n += "9"; return n;
+    }
     const int base = 60 + ((s.key + kScales[s.scale][degree]) % 12);
     auto notes = chordNotes (base, c);
     if (notes.empty()) return "";
@@ -208,7 +229,8 @@ public:
             }
         }
         lastRun = s.run;
-        const int key = (s.chordOn ? 1 : 0) | (s.arpOn ? 2 : 0) | (s.key << 2) | (s.scale << 6) | (s.type << 10) | (s.inversion << 14) | (s.voicing << 17) | (s.lock ? 1 << 20 : 0) | (s.chordMode << 21) | (s.shape << 22) | (s.voiceLead ? 1 << 27 : 0);
+        int key = (s.chordOn ? 1 : 0) | (s.arpOn ? 2 : 0) | (s.key << 2) | (s.scale << 6) | (s.type << 10) | (s.inversion << 14) | (s.voicing << 17) | (s.lock ? 1 << 20 : 0) | (s.chordMode << 21) | (s.shape << 22) | (s.voiceLead ? 1 << 27 : 0);
+        if (s.chordMode == 2) { uint32_t h = 2166136261u; for (int m : s.degShape) h = (h ^ (uint32_t) m) * 16777619u; key = (int) (((uint32_t) key * 31u + h) & 0x7fffffffu); }   // editing a Custom shape restarts the chord
         if (key != modeKey || (s.arpOn && resume))
         {
             const bool first = (modeKey < 0); modeKey = key; prevVoicing.clear();
@@ -402,8 +424,9 @@ private:
         const int L = (int) pat.size(); const double len = stepLen (s, bpm, sr);
         // In the plain modes a grouping (Relic's own design: the reference's behaviour there could not be measured cleanly) cuts the line into the group
         // lengths and restarts the pattern at the top of every group, so a pass is one 16-step bar. Chord mode and Waterfall keep their own rules.
-        const bool grouped = s.grouping > 0 && s.mode != 6 && s.mode != 7;
-        cycleSteps = s.mode == 6 ? 1 : s.mode == 7 ? (s.grouping > 0 ? 16 : 8) : grouped ? 16
+        const bool grouped = s.grouping > 0 && s.mode != 6 && s.mode != 7 && s.mode != 8;
+        const int customLen = std::max (1, std::min (64, s.patLength));
+        cycleSteps = s.mode == 6 ? 1 : s.mode == 8 ? customLen : s.mode == 7 ? (s.grouping > 0 ? 16 : 8) : grouped ? 16
                      : (s.mode == 2 || s.mode == 3) ? std::max (1, 2 * L - 2) : L;
         const int ps = grouped ? groupStep (s.grouping, patternStep) : patternStep;   // pattern position: restarts in every group
         const int laneLength = std::max (1, std::min (16, s.rhythmLength));
@@ -412,7 +435,7 @@ private:
         { releaseTie (t, out); arpActive = false; stopTail = false; return; }
         const bool hit = cell.type == 0;
         const bool tieNext = s.rhythmOn && s.rhythm[(size_t) ((step + 1) % laneLength)].type == 2;
-        if (s.order >= 2 && s.mode != 6 && L > 1 && hit) // reorder only when a pattern note will actually be consumed
+        if (s.order >= 2 && s.mode != 6 && s.mode != 8 && L > 1 && hit) // reorder only when a pattern note will actually be consumed
         {
             std::vector<std::pair<int, float>> src = pat; std::vector<int> idx;
             if (s.order == 2) { int lo = 0, hi = L - 1; while (lo <= hi) { idx.push_back (lo++); if (lo <= hi) idx.push_back (hi--); } }
@@ -422,6 +445,15 @@ private:
         }
         std::vector<std::pair<int, float>> play;
         if (s.mode == 6) play = pat;
+        else if (s.mode == 8)       // CUSTOM: the step's note number picks a held note; whole turns of the held-note list shift the octave
+        {
+            const int nb = (int) base.size(), d = s.pattern[(size_t) (patternStep % customLen)];
+            const int q = (d >= 0 ? d / nb : -((-d + nb - 1) / nb)), r = d - q * nb;
+            int note = base[(size_t) r].first + 12 * q;
+            while (note > 127) note -= 12;
+            while (note < 0) note += 12;
+            play.push_back ({ note, base[(size_t) r].second });
+        }
         else
         {
             int i = 0; const int cyc = std::max (1, 2 * L - 2);

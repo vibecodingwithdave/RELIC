@@ -204,9 +204,10 @@ inline juce::String formatValue (const juce::String& id, double v)
     if (id.endsWith ("_db")) return (std::abs (v) >= 10.0 ? f (v, 0) : f (v, 1)) + " dB";
     if (id.endsWith ("_ct")) return f (v, 0) + " ct";
     if (id.endsWith ("_ms")) return v >= 1000.0 ? f (v / 1000.0, 2) + " s" : f (v, 0) + " ms";
-    if (id == "sample_root") return juce::MidiMessage::getMidiNoteName ((int) std::round (v), true, true, 3);
-    if (id == "sample_octave") return (v > 0.5 ? "+" : "") + juce::String ((int) std::round (v));
-    if (id == "sample_start" || id == "loop_start" || id == "loop_end" || id == "sample_gain") return f (v * 100.0, 0) + "%";
+    if (id == "sample_root" || id == "sampleb_root") return juce::MidiMessage::getMidiNoteName ((int) std::round (v), true, true, 3);
+    if (id == "sample_octave" || id == "sampleb_octave") return (v > 0.5 ? "+" : "") + juce::String ((int) std::round (v));
+    if (id == "sample_start" || id == "sample_end" || id == "loop_start" || id == "loop_end" || id == "sample_gain"
+        || id == "sampleb_start" || id == "sampleb_end" || id == "sampleb_loop_start" || id == "sampleb_loop_end" || id == "sampleb_gain") return f (v * 100.0, 0) + "%";
     if (id == "reverb_size") return f (0.3 * std::pow (20.0, v), 1) + " s";
     if (id == "reverb_damp" || id == "reverb_mix" || id == "chorus_mix" || id == "flanger_mix" || id == "chorus_depth" || id == "flanger_depth") return f (v * 100.0, 0) + "%";
     if (id == "master" || id == "osc_level" || id == "arp_gate" || id == "arp_swing" || id == "arp_human") return f (v * 100.0, 0) + "%";
@@ -385,6 +386,7 @@ public:
     {
         paintFrame (g);
         const int shape = (int) val ("waveform"); const float pw = val ("pulse_width");
+        const auto user = (shape == 4 && val ("wt_use_file") > 0.5f) ? proc.getWavetableBank() : nullptr;
         auto b = getLocalBounds().toFloat().reduced (14.0f, 20.0f);
         juce::Path p; const int n = 400; const float cycles = 3.0f;
         for (int i = 0; i <= n; ++i)
@@ -393,6 +395,11 @@ public:
             if (shape == 0) v = std::sin (ph * juce::MathConstants<float>::twoPi);
             else if (shape == 1) v = 1.0f - 2.0f * ph;
             else if (shape == 2) v = ph < pw ? 1.0f : -1.0f;
+            else if (shape == 4 && user != nullptr)      // a loaded wavetable file: the frames morphed at the Width position
+            {
+                static const rf::WaveTables lookupOnly;
+                v = lookupOnly.lookupUserMorph (*user, juce::jlimit (0.0, 1.0, (double) (pw - 0.05f) / 0.9), 3, (double) ph) * 0.9f;
+            }
             else if (shape == 4)       // wavetable: the bank morphed at the Width position, summed from its harmonics
             {
                 const double pos = juce::jlimit (0.0, 1.0, (double) (pw - 0.05f) / 0.9) * (rf::WaveTables::WtCount - 1); const int t0 = std::min (rf::WaveTables::WtCount - 2, (int) pos); const double fr = pos - t0;
@@ -408,7 +415,7 @@ public:
         g.setColour (lime); g.strokePath (p, juce::PathStrokeType (2.5f));
         g.setColour (lime.withAlpha (0.85f));
         static const char* names[] = { "SINE", "SAW", "SQUARE", "TRIANGLE", "WAVETABLE", "PLUCK", "BELL" };
-        drawText (g, juce::String ("OSC  ") + names[shape] + "   UNISON " + juce::String ((int) val ("unison_voices")), juce::Rectangle<int> (14, 6, getWidth() - 28, (int) (getHeight() * 0.1f)), getHeight() * 0.07f, juce::Justification::left);
+        drawText (g, juce::String ("OSC  ") + (user != nullptr ? juce::String ("WAVETABLE  ") + juce::String (user->name).toUpperCase().substring (0, 28) + "  " + juce::String (user->frames) + (user->frames == 1 ? " FRAME" : " FRAMES") : juce::String (names[shape])) + "   UNISON " + juce::String ((int) val ("unison_voices")), juce::Rectangle<int> (14, 6, getWidth() - 28, (int) (getHeight() * 0.1f)), getHeight() * 0.07f, juce::Justification::left);
     }
 };
 
@@ -558,16 +565,18 @@ class SampleDisplay : public Display
 {
 public:
     using Display::Display;
+    void setSlot (int s) { if (s != slot) { slot = s; repaint(); } }
     void paint (juce::Graphics& g) override
     {
         paintFrame (g);
-        auto s = proc.getSample(); const float W = (float) getWidth(), H = (float) getHeight();
+        auto s = slot == 0 ? proc.getSample() : proc.getSampleB(); const float W = (float) getWidth(), H = (float) getHeight();
         if (s == nullptr)
         {
             g.setColour (lime.withAlpha (0.85f));
-            drawText (g, "DROP A SAMPLE HERE", juce::Rectangle<float> (0, H * 0.34f, W, H * 0.16f), H * 0.12f, juce::Justification::centred);
+            drawText (g, slot == 0 ? "DROP A SAMPLE HERE" : "NO SAMPLE IN SLOT B", juce::Rectangle<float> (0, H * 0.34f, W, H * 0.16f), H * 0.12f, juce::Justification::centred);
             g.setColour (lime.withAlpha (0.55f));
-            drawText (g, proc.sampleError.isNotEmpty() ? proc.sampleError : juce::String ("or press LOAD  (wav, aiff, flac, mp3)"), juce::Rectangle<float> (0, H * 0.52f, W, H * 0.1f), H * 0.07f, juce::Justification::centred);
+            drawText (g, slot == 0 && proc.sampleError.isNotEmpty() ? proc.sampleError : juce::String (slot == 0 ? "or press LOAD  (wav, aiff, flac, mp3)" : "press LOAD to put a sample in slot B"),
+                      juce::Rectangle<float> (0, H * 0.52f, W, H * 0.1f), H * 0.07f, juce::Justification::centred);
             return;
         }
         auto b = getLocalBounds().toFloat().reduced (16.0f, 28.0f);
@@ -579,10 +588,14 @@ public:
             const float lo = juce::jlimit (-1.0f, 1.0f, s->peaksMin[(size_t) k] / s->peak), hi = juce::jlimit (-1.0f, 1.0f, s->peaksMax[(size_t) k] / s->peak);
             g.drawLine (b.getX() + x, cy - hi * amp, b.getX() + x, cy - lo * amp + 1.0f, 1.2f);
         }
-        const float st = val ("sample_start"), la = val ("loop_start"), lb = val ("loop_end"); const bool loopOn = val ("sample_loop") > 0.5f;
+        const float st = val (id (0)), en = val (id (1)), la = val (id (2)), lb = val (id (3)); const bool loopOn = val (id (4)) > 0.5f;
         auto line = [&] (float v, juce::Colour c) { g.setColour (c); const float x = b.getX() + b.getWidth() * v; g.drawLine (x, b.getY(), x, b.getBottom(), 2.0f); g.fillEllipse (x - 5, b.getBottom() - 4, 10, 10); };
+        // the part before Start and after End is not played
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        if (st > 0.0f) g.fillRect (b.getX(), b.getY(), b.getWidth() * st, b.getHeight());
+        if (en < 0.999f) g.fillRect (b.getX() + b.getWidth() * en, b.getY(), b.getWidth() * (1.0f - en), b.getHeight());
         if (loopOn) { g.setColour (gold.withAlpha (0.12f)); g.fillRect (b.getX() + b.getWidth() * la, b.getY(), b.getWidth() * (lb - la), b.getHeight()); line (la, gold); line (lb, gold); }
-        if (val ("chop_on") > 0.5f)
+        if (slot == 0 && val ("chop_on") > 0.5f)
         {
             double sb[18]; const int cnt = proc.chopSlices (*s, proc.getHostBpm(), sb);
             for (int i = 0; i < cnt; ++i)
@@ -594,30 +607,42 @@ public:
             }
         }
         line (st, juce::Colour (0xffe8e0b0));
+        if (en < 0.999f) line (en, juce::Colour (0xffff9a7a));
         g.setColour (lime.withAlpha (0.9f));
-        const int root = (int) val ("sample_root");
-        drawText (g, "SLOT A  " + juce::String (s->rate / 1000.0, 1) + "k   ROOT " + juce::MidiMessage::getMidiNoteName (root, true, true, 3) + "    " + s->name.toUpperCase(),
+        const int root = (int) val (id (5)); const bool follows = slot == 1 && val ("sampleb_indep") < 0.5f;
+        drawText (g, juce::String (slot == 0 ? "SLOT A  " : "SLOT B  ") + juce::String (s->rate / 1000.0, 1) + "k   ROOT " + juce::MidiMessage::getMidiNoteName (root, true, true, 3) + "    " + s->name.toUpperCase() + (follows ? "    (FOLLOWS A: TURN ON B LAYER)" : ""),
                   juce::Rectangle<int> (14, 6, getWidth() - 28, (int) (H * 0.1f)), H * 0.07f, juce::Justification::left);
     }
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (proc.getSample() == nullptr) return;
+        if ((slot == 0 ? proc.getSample() : proc.getSampleB()) == nullptr) return;
         const float x01 = juce::jlimit (0.0f, 1.0f, (e.position.x - 16.0f) / (float) (getWidth() - 32));
-        const char* ids[3] = { "sample_start", "loop_start", "loop_end" }; float best = 0.04f; drag = nullptr;
-        for (int i = 0; i < 3; ++i) { if (i > 0 && val ("sample_loop") < 0.5f) continue; const float d = std::abs (val (ids[i]) - x01); if (d < best) { best = d; drag = proc.apvts.getParameter (ids[i]); } }
+        float best = 0.04f; drag = nullptr;
+        for (int i = 0; i < 4; ++i)       // Start, End, Loop in, Loop out; the loop markers only count while looping
+        { if (i >= 2 && val (id (4)) < 0.5f) continue; const float d = std::abs (val (id (i)) - x01); if (d < best) { best = d; drag = proc.apvts.getParameter (id (i)); } }
         if (drag) { drag->beginChangeGesture(); mouseDrag (e); }
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (! drag) return;
         float v = juce::jlimit (0.0f, 1.0f, (e.position.x - 16.0f) / (float) (getWidth() - 32));
-        if (drag->paramID == "loop_start") v = std::min (v, val ("loop_end") - 0.01f);
-        if (drag->paramID == "loop_end") v = std::max (v, val ("loop_start") + 0.01f);
-        drag->setValueNotifyingHost (drag->convertTo0to1 (v));
+        const auto pid = drag->paramID;
+        if (pid == id (0)) v = std::min (v, val (id (1)) - 0.01f);
+        if (pid == id (1)) v = std::max (v, val (id (0)) + 0.01f);
+        if (pid == id (2)) v = std::min (v, val (id (3)) - 0.01f);
+        if (pid == id (3)) v = std::max (v, val (id (2)) + 0.01f);
+        drag->setValueNotifyingHost (drag->convertTo0to1 (juce::jlimit (0.0f, 1.0f, v)));
     }
     void mouseUp (const juce::MouseEvent&) override { if (drag) { drag->endChangeGesture(); drag = nullptr; } }
 private:
-    juce::RangedAudioParameter* drag = nullptr;
+    // parameter ids of the slot being shown: 0 start, 1 end, 2 loop in, 3 loop out, 4 loop on, 5 root
+    const char* id (int k) const
+    {
+        static const char* a[6] = { "sample_start", "sample_end", "loop_start", "loop_end", "sample_loop", "sample_root" };
+        static const char* b[6] = { "sampleb_start", "sampleb_end", "sampleb_loop_start", "sampleb_loop_end", "sampleb_loop", "sampleb_root" };
+        return (slot == 0 ? a : b)[k];
+    }
+    juce::RangedAudioParameter* drag = nullptr; int slot = 0;
 };
 
 // SAMPLE <-> Synth crossfader.
@@ -711,15 +736,17 @@ public:
         {
             if (r >= 0 && r < (int) shown.size() && proc.loadPresetFile (shown[(size_t) r].file)) updateSelection();
         };
-        const char* names[4] = { "SAVE AS", "INIT", "RESCAN", "CLOSE" };
-        for (int i = 0; i < 4; ++i)
+        const char* names[5] = { "SAVE AS", "INIT", "RESCAN", "TYPE: ALL", "CLOSE" };
+        for (int i = 0; i < 5; ++i)
         {
             btn[i] = std::make_unique<StoneButton> (names[i], true, false); btn[i]->textScale = 0.42f; addAndMakeVisible (*btn[i]);
         }
         btn[0]->onClick = [this] { if (onSave) onSave(); };
         btn[1]->onClick = [this] { proc.initPreset(); updateSelection(); };
         btn[2]->onClick = [this] { refresh(); };
-        btn[3]->onClick = [this] { if (onClose) onClose(); };
+        btn[3]->onClick = [this] { selPart = (selPart + 1) % (presetPartNames().size() + 1); btn[3]->setButtonText (selPart == 0 ? "TYPE: ALL" : "TYPE: " + presetPartNames()[selPart - 1].toUpperCase()); fillPresets(); };
+        btn[3]->setTooltip (help::forName ("preset_type"));
+        btn[4]->onClick = [this] { if (onClose) onClose(); };
     }
     std::function<void()> onSave, onClose;
     void refresh()
@@ -749,8 +776,8 @@ public:
         for (int i = 0; i < 9; ++i) chips[i]->setBounds (chipRow.removeFromLeft (chipRow.getWidth() / (9 - i)).reduced (1, 0));
         auto bottom = b.removeFromBottom (getHeight() / 10); b.removeFromBottom (getHeight() / 40);
         banks.setBounds (b.removeFromLeft (b.getWidth() * 40 / 100)); b.removeFromLeft (getWidth() / 60); presets.setBounds (b);
-        const int bw = bottom.getWidth() / 4;
-        for (int i = 0; i < 4; ++i) btn[i]->setBounds (bottom.removeFromLeft (bw).reduced (getWidth() / 90, 0));
+        const int bw = bottom.getWidth() / 5;
+        for (int i = 0; i < 5; ++i) btn[i]->setBounds (bottom.removeFromLeft (bw).reduced (getWidth() / 90, 0));
     }
     void updateSelection() { fillPresets(); }
 private:
@@ -764,13 +791,15 @@ private:
             const auto cat = presetCategories().contains (e.category) ? e.category : juce::String ("Other");
             if (selBank != 0 && e.bank != bankNames[selBank - 1]) continue;
             if (wanted.isNotEmpty() && cat != wanted) continue;
-            if (q.isNotEmpty() && ! (e.name + " " + cat + " " + e.bank).toLowerCase().contains (q)) continue;
-            if (e.name == proc.getPresetName() && e.bank == proc.getPresetBank()) sel = (int) shown.size();
-            shown.push_back (e); names.add (e.name);
+            if (selPart == 1 && e.part.isNotEmpty()) continue;
+            if (selPart > 1 && e.part != presetPartNames()[selPart - 1]) continue;
+            if (q.isNotEmpty() && ! (e.name + " " + cat + " " + e.bank + " " + e.part).toLowerCase().contains (q)) continue;
+            if (e.part.isEmpty() && e.name == proc.getPresetName() && e.bank == proc.getPresetBank()) sel = (int) shown.size();
+            shown.push_back (e); names.add (e.part.isNotEmpty() ? e.name + "   [" + e.part + "]" : e.name);
         }
         presets.setItems (names, sel); repaint();
     }
-    RelicProcessor& proc; TextList banks, presets; std::unique_ptr<StoneButton> btn[4];
+    RelicProcessor& proc; TextList banks, presets; std::unique_ptr<StoneButton> btn[5]; int selPart = 0;      // selPart: 0 all types, 1 full presets, 2.. one part
     juce::TextEditor search; std::unique_ptr<StoneButton> chips[9]; int selCat = 0;
     std::vector<PresetEntry> all, shown; juce::StringArray bankNames; int selBank = 0;
 };
@@ -843,6 +872,119 @@ public:
     static inline const char* kScaleNames[9] = { "MAJOR", "MINOR", "DORIAN", "PHRYGIAN", "LYDIAN", "MIXOLYDIAN", "LOCRIAN", "HARMONIC MINOR", "MELODIC MINOR" };
 };
 
+// CUSTOM chord shapes: one row per scale degree, one cell per semitone above its root (0 to 21). Click a cell to add or remove that note.
+// Right-click a row for ready-made shapes, or to copy it to every degree.
+class ShapeEditor : public Display
+{
+public:
+    ShapeEditor (RelicProcessor& p) : Display (p) { setTooltip ("Custom chord shapes: each row is a scale degree, each cell a note above its root (0 = the root, 4 = a major third, 7 = a fifth). Click to add or remove. Right-click a row for ready-made shapes."); }
+    void paint (juce::Graphics& g) override
+    {
+        paintFrame (g); const auto s = proc.readChordArp(); const int hot = proc.chordDegreeShown.load();
+        static const char* roman[7] = { "I", "II", "III", "IV", "V", "VI", "VII" };
+        for (int c = 0; c < 22; ++c) { g.setColour (parchment.withAlpha (c % 12 == 0 ? 0.9f : 0.5f)); drawText (g, juce::String (c), colBounds (c).withHeight (12.0f).withY (grid().getY() - 13.0f), 9, juce::Justification::centred); }
+        for (int d = 0; d < 7; ++d)
+        {
+            const auto lab = rowBounds (d).withWidth (labelWidth());
+            g.setColour (s.chordOn && d == hot ? lime : parchment); drawText (g, juce::String (roman[d]) + "  " + juce::String (rf::chordName (d, s)), lab.translated (2.0f, 0), 11, juce::Justification::centredLeft);
+            for (int c = 0; c < 22; ++c)
+            {
+                const auto b = cellBounds (d, c).reduced (1.5f); const bool on = (s.degShape[(size_t) d] & (1 << c)) != 0;
+                g.setColour (on ? lime.withAlpha (s.chordOn && s.chordMode == 2 ? 0.85f : 0.45f) : lime.withAlpha (0.07f)); g.fillRoundedRectangle (b, 3);
+            }
+        }
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        for (int d = 0; d < 7; ++d)
+        {
+            if (! rowBounds (d).contains (e.position)) continue;
+            if (e.mods.isPopupMenu())
+            {
+                juce::PopupMenu menu; juce::PopupMenu shapes; for (int i = 0; i < 24; ++i) shapes.addItem (1 + i, juce::String (rf::fixedShapeName (i)).isEmpty() ? "MAJ" : juce::String (rf::fixedShapeName (i)).toUpperCase());
+                menu.addSubMenu ("Set this row to a shape", shapes); menu.addItem (100, "Copy this row to every degree"); menu.addItem (101, "Reset all rows (major scale triads)"); menu.addItem (102, "Clear this row");
+                auto safe = juce::Component::SafePointer<ShapeEditor> (this);
+                menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe, d] (int r)
+                {
+                    if (safe == nullptr) return;
+                    if (r >= 1 && r <= 24) { int m = 0; for (int iv : rf::fixedShape (r - 1)) if (iv < 22) m |= 1 << iv; safe->set (d, m); }
+                    if (r == 100) { const int m = (int) safe->proc.apvts.getRawParameterValue (safe->pid (d))->load(); for (int k = 0; k < 7; ++k) safe->set (k, m); }
+                    if (r == 101) { static const int t[7] = { 0x91, 0x89, 0x89, 0x91, 0x91, 0x89, 0x49 }; for (int k = 0; k < 7; ++k) safe->set (k, t[k]); }
+                    if (r == 102) safe->set (d, 0);
+                });
+                return;
+            }
+            for (int c = 0; c < 22; ++c) if (cellBounds (d, c).contains (e.position))
+            { set (d, (int) proc.apvts.getRawParameterValue (pid (d))->load() ^ (1 << c)); return; }
+        }
+    }
+private:
+    juce::String pid (int d) const { return "chord_deg_" + juce::String (d + 1) + "_shape"; }
+    float labelWidth() const { return 96.0f; }
+    juce::Rectangle<float> grid() const { auto b = getLocalBounds().toFloat().reduced (12, 6); b.removeFromTop (14); return b; }
+    juce::Rectangle<float> rowBounds (int d) const { const auto b = grid(); const float h = b.getHeight() / 7; return { b.getX(), b.getY() + h * d, b.getWidth(), h }; }
+    juce::Rectangle<float> colBounds (int c) const { const auto b = grid(); const float w = (b.getWidth() - labelWidth()) / 22; return { b.getX() + labelWidth() + w * c, b.getY(), w, b.getHeight() }; }
+    juce::Rectangle<float> cellBounds (int d, int c) const { const auto r = rowBounds (d), col = colBounds (c); return { col.getX(), r.getY(), col.getWidth(), r.getHeight() }; }
+    void set (int d, int mask) { auto* p = proc.apvts.getParameter (pid (d)); p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 ((float) mask)); p->endChangeGesture(); repaint(); }
+};
+
+// CUSTOM chop kit: one row per pad (C1 upward) with the slice it plays, a pitch shift, reverse, a level and a choke group
+// (pads sharing a choke group cut each other off, like a closed and an open hat).
+class KitPanel : public juce::Component
+{
+public:
+    KitPanel (RelicProcessor& p) : proc (p)
+    {
+        static const char* names[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        for (int i = 0; i < 16; ++i)
+        {
+            auto& r = rows[(size_t) i]; const juce::String k = "chop_kit_" + juce::String (i + 1) + "_";
+            const int midi = RelicProcessor::kChopBase + i;
+            r.name.setText ("PAD " + juce::String (i + 1) + "  " + names[midi % 12] + juce::String (midi / 12 - 1), juce::dontSendNotification); r.name.setFont (juce::FontOptions (12.5f)); r.name.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0));
+            auto* ps = proc.apvts.getParameter (k + "slice"); r.slice.addItemList (ps->getAllValueStrings(), 1); r.sliceA = std::make_unique<juce::ComboBoxParameterAttachment> (*ps, r.slice);
+            auto* pc = proc.apvts.getParameter (k + "choke"); r.choke.addItemList (pc->getAllValueStrings(), 1); r.chokeA = std::make_unique<juce::ComboBoxParameterAttachment> (*pc, r.choke);
+            for (auto* sl : { &r.pitch, &r.level }) { sl->setSliderStyle (juce::Slider::LinearHorizontal); sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, 20); }
+            r.pitch.setTextValueSuffix (" st"); r.level.setTextValueSuffix (" dB"); r.level.setNumDecimalPlacesToDisplay (1);
+            r.pitchA = std::make_unique<juce::SliderParameterAttachment> (*proc.apvts.getParameter (k + "pitch"), r.pitch);
+            r.levelA = std::make_unique<juce::SliderParameterAttachment> (*proc.apvts.getParameter (k + "level"), r.level);
+            r.rev.setButtonText ("REV"); r.revA = std::make_unique<juce::ButtonParameterAttachment> (*proc.apvts.getParameter (k + "rev"), r.rev);
+            r.slice.setTooltip ("Which slice this pad plays: Own (the pad's own number), a slice 1 to 16, or Mute.");
+            r.choke.setTooltip ("Pads in the same choke group cut each other off. Off = never.");
+            for (juce::Component* c : { (juce::Component*) &r.name, (juce::Component*) &r.slice, (juce::Component*) &r.pitch, (juce::Component*) &r.rev, (juce::Component*) &r.level, (juce::Component*) &r.choke }) addAndMakeVisible (c);
+        }
+        for (auto* b : { &resetB, &reverseB }) addAndMakeVisible (b);
+        resetB.setButtonText ("RESET KIT"); reverseB.setButtonText ("REVERSE ORDER");
+        resetB.onClick = [this] { for (int i = 0; i < 16; ++i) { const juce::String k = "chop_kit_" + juce::String (i + 1) + "_"; for (auto* id : { "slice", "pitch", "rev", "level", "choke" }) setNorm (k + id, def (k + id)); } };
+        reverseB.onClick = [this]
+        {
+            const int n = juce::jlimit (2, 16, (int) proc.apvts.getRawParameterValue ("chop_count")->load());
+            for (int i = 0; i < 16; ++i) setNorm ("chop_kit_" + juce::String (i + 1) + "_slice", i < n ? (float) (n - i) / 17.0f : def ("chop_kit_" + juce::String (i + 1) + "_slice"));
+        };
+        setSize (660, 28 + 16 * 26 + 44);
+    }
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xff17131c)); g.setColour (juce::Colour (0xffe8e0b0)); g.setFont (juce::FontOptions (12.0f));
+        const int y = 6; g.drawText ("SLICE", 92, y, 70, 16, juce::Justification::centred); g.drawText ("PITCH", 170, y, 130, 16, juce::Justification::centred);
+        g.drawText ("LEVEL", 372, y, 130, 16, juce::Justification::centred); g.drawText ("CHOKE", 590, y, 60, 16, juce::Justification::centred);
+    }
+    void resized() override
+    {
+        for (int i = 0; i < 16; ++i)
+        {
+            auto& r = rows[(size_t) i]; const int y = 26 + i * 26;
+            r.name.setBounds (8, y, 82, 24); r.slice.setBounds (92, y + 1, 70, 22); r.pitch.setBounds (166, y, 168, 24); r.rev.setBounds (338, y, 56, 24); r.level.setBounds (396, y, 168, 24); r.choke.setBounds (590, y + 1, 60, 22);
+        }
+        resetB.setBounds (8, getHeight() - 36, 120, 28); reverseB.setBounds (136, getHeight() - 36, 140, 28);
+    }
+private:
+    struct Row { juce::Label name; juce::ComboBox slice, choke; juce::Slider pitch, level; juce::ToggleButton rev;
+                 std::unique_ptr<juce::ComboBoxParameterAttachment> sliceA, chokeA; std::unique_ptr<juce::SliderParameterAttachment> pitchA, levelA; std::unique_ptr<juce::ButtonParameterAttachment> revA; };
+    float def (const juce::String& id) const { return proc.apvts.getParameter (id)->getDefaultValue(); }
+    void setNorm (const juce::String& id, float v) { auto* q = proc.apvts.getParameter (id); q->beginChangeGesture(); q->setValueNotifyingHost (v); q->endChangeGesture(); }
+    RelicProcessor& proc; std::array<Row, 16> rows; juce::TextButton resetB, reverseB;
+};
+
 // Bars for one pass of the arpeggio on a demo triad; the bar for the step that just played lights up.
 class ArpDisplay : public Display
 {
@@ -867,9 +1009,9 @@ public:
         }
         if (pos.empty()) pos = { 0 };
         const int steps = 16; auto area = getLocalBounds().toFloat().reduced (18.0f, 20.0f); area.removeFromTop (area.getHeight() * 0.16f);
-        static const char* rates[] = { "1/1", "1/2", "1/2D", "1/2T", "1/4", "1/4D", "1/4T", "1/8", "1/8D", "1/8T", "1/16", "1/16D", "1/16T", "1/32" }; static const char* modes[] = { "UP", "DOWN", "UP-DOWN", "DOWN-UP", "RANDOM", "PLAYED", "CHORD", "WATERFALL" };
+        static const char* rates[] = { "1/1", "1/2", "1/2D", "1/2T", "1/4", "1/4D", "1/4T", "1/8", "1/8D", "1/8T", "1/16", "1/16D", "1/16T", "1/32" }; static const char* modes[] = { "UP", "DOWN", "UP-DOWN", "DOWN-UP", "RANDOM", "PLAYED", "CHORD", "WATERFALL", "CUSTOM" };
         g.setColour (lime.withAlpha (s.arpOn ? 0.85f : 0.4f));
-        drawText (g, juce::String (modes[juce::jlimit (0, 7, s.mode)]) + "   " + rates[juce::jlimit (0, 13, s.grouping != 0 && s.mode == 7 ? 10 : s.rate)] + "   " + juce::String (s.octaves) + " OCT" + (! s.arpOn ? "   (ARP OFF)" : ! s.run && proc.arpWaitingShown.load() ? "   (STOP)" : ""),
+        drawText (g, juce::String (modes[juce::jlimit (0, 8, s.mode)]) + "   " + rates[juce::jlimit (0, 13, s.grouping != 0 && s.mode == 7 ? 10 : s.rate)] + "   " + juce::String (s.octaves) + " OCT" + (! s.arpOn ? "   (ARP OFF)" : ! s.run && proc.arpWaitingShown.load() ? "   (STOP)" : ""),
                   juce::Rectangle<float> (18.0f, 8.0f, (float) getWidth() - 36.0f, (float) getHeight() * 0.14f), (float) getHeight() * 0.09f, juce::Justification::left);
         const float cw = area.getWidth() / steps;
         for (int i = 0; i < steps; ++i)
@@ -976,6 +1118,80 @@ private:
     }
 };
 
+// CUSTOM arp pattern: up to 64 steps in four bars of 16. Drag a bar up or down to choose the note number of that step (0 = lowest held note, 1 = the next, past the last
+// one it continues an octave up; below 0 it goes down). Right-click: length and reset.
+class PatternLane : public Display
+{
+public:
+    PatternLane (RelicProcessor& p) : Display (p)
+    {
+        setTooltip ("Custom pattern: drag a bar to set the note number of that step (0 = lowest held note). Click BAR 1-4 to change page. Right-click: length and reset.");
+    }
+    void paint (juce::Graphics& g) override
+    {
+        paintFrame (g); const auto s = proc.readChordArp(); const int len = juce::jlimit (1, 64, s.patLength);
+        const int hot = proc.arpStepShown.load() - 1;
+        g.setColour (lime.withAlpha (0.85f)); drawText (g, "CUSTOM PATTERN   " + juce::String (len) + " STEPS", juce::Rectangle<float> (18.0f, 8.0f, 300.0f, 14.0f), 11, juce::Justification::left);
+        for (int b = 0; b < 4; ++b)
+        {
+            auto t = tabBounds (b); g.setColour (b == page ? gold : goldDim); g.drawRoundedRectangle (t, 3, 1.2f);
+            g.setColour (parchment.withAlpha (b * 16 < len ? 0.9f : 0.3f)); drawText (g, "BAR " + juce::String (b + 1), t, 10, juce::Justification::centred);
+        }
+        const auto area = laneArea(); g.setColour (lime.withAlpha (0.25f)); g.drawHorizontalLine ((int) (area.getY() + area.getHeight() * 0.5f), area.getX(), area.getRight());
+        for (int i = 0; i < 16; ++i)
+        {
+            const int idx = page * 16 + i; auto c = cellBounds (i); const bool on = idx < len;
+            g.setColour (lime.withAlpha (on ? 0.12f : 0.03f)); g.fillRoundedRectangle (c, 3);
+            if (! on) continue;
+            const int d = s.pattern[(size_t) idx]; const float mid = c.getCentreY(), y = c.getY() + c.getHeight() * (12 - d) / 24.0f;
+            g.setColour (lime.withAlpha (s.arpOn && s.mode == 8 ? 0.8f : 0.4f)); g.fillRect (juce::Rectangle<float> (c.getX() + 4, juce::jmin (mid, y), c.getWidth() - 8, juce::jmax (2.0f, std::abs (y - mid))));
+            if (s.arpOn && s.mode == 8 && hot >= 0 && hot % len == idx) { g.setColour (gold); g.drawRoundedRectangle (c, 3, 1.5f); }
+            g.setColour (parchment.withAlpha (0.85f)); drawText (g, juce::String (d), c.withHeight (12.0f).withY (c.getY() + 1), 9, juce::Justification::centred);
+        }
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu())
+        {
+            juce::PopupMenu menu; const auto s = proc.readChordArp();
+            for (int n : { 4, 8, 12, 16, 24, 32, 48, 64 }) menu.addItem (n, juce::String (n) + " steps", true, n == s.patLength);
+            menu.addSeparator(); menu.addItem (100, "Reset: 0 1 2 3 4 5 6 7 ..."); menu.addItem (101, "Clear: every step on the lowest note");
+            auto safe = juce::Component::SafePointer<PatternLane> (this);
+            menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
+            {
+                if (safe == nullptr) return;
+                if (r >= 1 && r <= 64) safe->set ("arp_pat_length", (float) r);
+                if (r == 100) for (int i = 0; i < 64; ++i) safe->set ("arp_pat_" + juce::String (i + 1), (float) (i % 8));
+                if (r == 101) for (int i = 0; i < 64; ++i) safe->set ("arp_pat_" + juce::String (i + 1), 0.0f);
+            });
+            return;
+        }
+        for (int b = 0; b < 4; ++b) if (tabBounds (b).contains (e.position)) { page = b; repaint(); return; }
+        grab (e);
+    }
+    void mouseDrag (const juce::MouseEvent& e) override { grab (e); }
+    void mouseUp (const juce::MouseEvent&) override { if (gesture != nullptr) { gesture->endChangeGesture(); gesture = nullptr; } }
+private:
+    int page = 0; juce::RangedAudioParameter* gesture = nullptr;
+    juce::Rectangle<float> laneArea() const { auto b = getLocalBounds().toFloat().reduced (12, 4); b.removeFromTop (22); return b; }
+    juce::Rectangle<float> tabBounds (int b) const { return { (float) getWidth() - 12.0f - 4 * 52.0f + (float) b * 52.0f, 6.0f, 48.0f, 16.0f }; }
+    juce::Rectangle<float> cellBounds (int i) const { const auto a = laneArea(); const float w = a.getWidth() / 16; return { a.getX() + w * i + 1, a.getY(), w - 2, a.getHeight() }; }
+    void grab (const juce::MouseEvent& e)
+    {
+        const int len = juce::jlimit (1, 64, proc.readChordArp().patLength);
+        for (int i = 0; i < 16; ++i)
+        {
+            const int idx = page * 16 + i; auto c = cellBounds (i);
+            if (idx >= len || e.position.x < c.getX() || e.position.x >= c.getRight() + 1) continue;
+            auto* p = proc.apvts.getParameter ("arp_pat_" + juce::String (idx + 1));
+            if (gesture != p) { if (gesture != nullptr) gesture->endChangeGesture(); gesture = p; p->beginChangeGesture(); }
+            const int d = juce::jlimit (-12, 12, (int) std::lround (12.0f - 24.0f * (e.position.y - c.getY()) / c.getHeight()));
+            p->setValueNotifyingHost (p->convertTo0to1 ((float) d)); repaint(); return;
+        }
+    }
+    void set (const juce::String& key, float value) { auto* p = proc.apvts.getParameter (key); p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (value)); p->endChangeGesture(); repaint(); }
+};
+
 // Horizontal slider for a signed amount: name on the left, value on the right.
 class AmountSlider : public juce::Component, public juce::SettableTooltipClient
 {
@@ -1037,7 +1253,7 @@ private:
 
     // presets
     std::unique_ptr<ui::PresetBrowser> browser; std::unique_ptr<ui::StoneButton> saveBtn, prevPreset, nextPreset; std::unique_ptr<ui::ClickArea> barClick;
-    juce::String lastPresetName;
+    juce::String lastPresetName, lastWtName;
     void doSave(); void stepPreset (int delta); void showBrowser (bool show);
 
     // SAMPLER tab
@@ -1047,6 +1263,18 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     ui::Knob* addKnobCopy (const char* id, const char* name);
     std::vector<ui::Knob*> sampKnobs;
+    // SAMPLER tab: which sample slot is being edited and what is shown for it
+    int sampSlot = 0;                                                    // 0 = slot A, 1 = slot B
+    std::unique_ptr<ui::StoneButton> slotBtn[2];
+    std::vector<juce::Component*> sampSetA, sampSetB, sampEnvVoice, sampEnvA, sampEnvB;
+    std::vector<ui::Knob*> sampKnobsA, sampKnobsB, envKnobsVoice, envKnobsA, envKnobsB;
+    void updateSamplerView();
+    // TEXTURE tab: grains page or own-file page
+    int texView = 0; std::unique_ptr<ui::StoneButton> texViewBtn[2], loadTex; std::vector<juce::Component*> texGrains, texShape, texOwnOnly;
+    void updateTextureView();
+    void updateArpView(); void updateChordView();
+    // MOD tab: slots 1-4 or 5-8
+    int modPage = 0; std::unique_ptr<ui::StoneButton> modPageBtn[2]; void updateModView();
 
     // OSC tab
     std::unique_ptr<ui::WaveDisplay> wave; std::unique_ptr<ui::EnvDisplay> env; std::unique_ptr<ui::Meter> meter;
@@ -1065,6 +1293,10 @@ private:
     struct Pad { std::unique_ptr<ui::StoneButton> btn; std::unique_ptr<juce::ButtonParameterAttachment> att; const char* id; };
     std::vector<Pad> pads;
     std::unique_ptr<ui::StoneButton> waveLeft, waveRight, waveName, polyBtn, allOn, bypassFx;
+    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn;      // wavetable file strip on the OSC tab
+    struct SyncChip { std::unique_ptr<ui::StoneButton> btn; juce::String knobId, syncId; };
+    std::vector<SyncChip> syncChips; void updateSyncChips();        // a small note-value button on each rate / time knob that can follow the host tempo
+    void showWavetableMenu(); void loadWavetableDialog(); void afterWavetableLoaded();
     juce::Label waveLabel;
 
     // FX tab controls
@@ -1072,7 +1304,7 @@ private:
     std::unique_ptr<ui::StoneButton> panShape;
 
     // CHORDS and ARP tabs
-    std::unique_ptr<ui::ChordDisplay> chordDisp; std::unique_ptr<ui::ArpDisplay> arpDisp; std::unique_ptr<ui::RhythmLane> rhythmLane;
+    std::unique_ptr<ui::ChordDisplay> chordDisp; std::unique_ptr<ui::ArpDisplay> arpDisp; std::unique_ptr<ui::RhythmLane> rhythmLane; std::unique_ptr<ui::PatternLane> patternLane; std::unique_ptr<ui::ShapeEditor> shapeEditor;
     std::map<juce::String, std::unique_ptr<ui::Stepper>> steppers;
     std::map<juce::String, std::unique_ptr<ui::StoneButton>> noteToggles; std::vector<std::unique_ptr<juce::ButtonParameterAttachment>> noteAtts;
     ui::Stepper* addStepper (const char* id, const char* name, std::vector<juce::Component*>& group);
