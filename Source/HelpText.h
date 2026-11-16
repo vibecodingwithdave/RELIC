@@ -95,7 +95,7 @@ inline const Table& params()
         { "synth_mix", "Balance between the sample (left) and the synth oscillators (right)." },
         { "sample_morph", "Morphs between sample A (left) and sample B (right)." },
         { "chop_on", "Chop: turns the loaded sample into pads you play with the low keys (C1 to D#2)." },
-        { "chop_mode", "How the sample is cut: Even (equal parts), Onset (at the strongest hits) or Grid (on the tempo)." },
+        { "chop_mode", "How the sample is cut: Even (equal parts), Onset (at the strongest hits) or Grid (on the tempo) or Manual (drag the slice markers on the waveform; right-click the waveform to start from the current slices)." },
         { "chop_count", "How many slices the sample is cut into." },
         { "chop_grid", "The note length of each slice in Grid mode." },
         { "preset_type", "Filter the list by type: full presets, or a partial preset that holds only the synth, sample, modulation, effects or arp and chord settings. Loading a partial preset changes only that part of the sound." },

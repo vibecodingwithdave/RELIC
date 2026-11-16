@@ -617,6 +617,14 @@ public:
     {
         if ((slot == 0 ? proc.getSample() : proc.getSampleB()) == nullptr) return;
         const float x01 = juce::jlimit (0.0f, 1.0f, (e.position.x - 16.0f) / (float) (getWidth() - 32));
+        if (slot == 0 && val ("chop_on") > 0.5f && e.mods.isPopupMenu()) { showChopMenu(); return; }
+        if (slot == 0 && val ("chop_on") > 0.5f && (int) val ("chop_mode") == 3)        // Manual slicing: a slice marker near the click is dragged first
+        {
+            const int cnt = juce::jlimit (2, 16, (int) val ("chop_count")); float bd = 0.025f; chopDrag = -1;
+            for (int i = 1; i < cnt; ++i) { const float d = std::abs (val (("chop_pt_" + juce::String (i)).toRawUTF8()) - x01); if (d < bd) { bd = d; chopDrag = i; } }
+            if (chopDrag > 0) { drag = proc.apvts.getParameter ("chop_pt_" + juce::String (chopDrag)); drag->beginChangeGesture(); mouseDrag (e); return; }
+        }
+        chopDrag = -1;
         float best = 0.04f; drag = nullptr;
         for (int i = 0; i < 4; ++i)       // Start, End, Loop in, Loop out; the loop markers only count while looping
         { if (i >= 2 && val (id (4)) < 0.5f) continue; const float d = std::abs (val (id (i)) - x01); if (d < best) { best = d; drag = proc.apvts.getParameter (id (i)); } }
@@ -627,14 +635,35 @@ public:
         if (! drag) return;
         float v = juce::jlimit (0.0f, 1.0f, (e.position.x - 16.0f) / (float) (getWidth() - 32));
         const auto pid = drag->paramID;
-        if (pid == id (0)) v = std::min (v, val (id (1)) - 0.01f);
+        if (chopDrag > 0)       // keep the marker between its neighbours so the order never changes
+        {
+            const int cnt = juce::jlimit (2, 16, (int) val ("chop_count")); float lo = 0.0f, hi = 1.0f; const float me = val (pid.toRawUTF8());
+            for (int i = 1; i < cnt; ++i) { if (i == chopDrag) continue; const float o = val (("chop_pt_" + juce::String (i)).toRawUTF8()); if (o <= me) lo = std::max (lo, o); else hi = std::min (hi, o); }
+            v = juce::jlimit (lo + 0.003f, hi - 0.003f, v);
+        }
+        else if (pid == id (0)) v = std::min (v, val (id (1)) - 0.01f);
         if (pid == id (1)) v = std::max (v, val (id (0)) + 0.01f);
         if (pid == id (2)) v = std::min (v, val (id (3)) - 0.01f);
         if (pid == id (3)) v = std::max (v, val (id (2)) + 0.01f);
         drag->setValueNotifyingHost (drag->convertTo0to1 (juce::jlimit (0.0f, 1.0f, v)));
     }
-    void mouseUp (const juce::MouseEvent&) override { if (drag) { drag->endChangeGesture(); drag = nullptr; } }
+    void mouseUp (const juce::MouseEvent&) override { if (drag) { drag->endChangeGesture(); drag = nullptr; } chopDrag = -1; }
 private:
+    int chopDrag = -1;
+    void setParam (const char* pid, float v) { if (auto* q = proc.apvts.getParameter (pid)) { q->beginChangeGesture(); q->setValueNotifyingHost (q->convertTo0to1 (v)); q->endChangeGesture(); } }
+    void showChopMenu()
+    {
+        juce::PopupMenu m; m.addSectionHeader ("CHOP SLICES"); m.addItem (1, "Make the current slices manual (then drag the markers)"); m.addItem (2, "Manual: space the slices evenly");
+        auto safe = juce::Component::SafePointer<SampleDisplay> (this);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
+        {
+            if (safe == nullptr || r == 0) return; auto s = safe->proc.getSample(); if (s == nullptr) return;
+            double b[18]; int cnt = r == 1 ? safe->proc.chopSlices (*s, safe->proc.getHostBpm(), b) : juce::jlimit (2, 16, (int) safe->val ("chop_count"));
+            if (r == 2) for (int i = 0; i <= cnt; ++i) b[i] = (double) i / cnt;
+            for (int i = 1; i < cnt; ++i) safe->setParam (("chop_pt_" + juce::String (i)).toRawUTF8(), (float) b[i]);
+            safe->setParam ("chop_count", (float) cnt); safe->setParam ("chop_mode", 3.0f);
+        });
+    }
     // parameter ids of the slot being shown: 0 start, 1 end, 2 loop in, 3 loop out, 4 loop on, 5 root
     const char* id (int k) const
     {

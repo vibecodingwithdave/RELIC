@@ -238,10 +238,12 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     integer ("split_note", "Split Note", 24, 96, 60);
     // Chop sampler
     toggle ("chop_on", "Chop On", false);
-    choice ("chop_mode", "Chop Mode", { "Even", "Onset", "Grid" }, 0);
+    choice ("chop_mode", "Chop Mode", { "Even", "Onset", "Grid", "Manual" }, 0);
     integer ("chop_count", "Chop Count", 2, 16, 8);
     choice ("chop_grid", "Chop Grid", { "1/4", "1/8", "1/16", "1/32" }, 2);
     integer ("chop_pitch", "Chop Pitch", -12, 12, 0);
+    // Manual slicing: the Manual mode cuts at these points (count - 1 of them are used, in order of position)
+    for (int i = 1; i <= 15; ++i) flt ("chop_pt_" + juce::String (i), "Chop Point " + juce::String (i), 0.0f, 1.0f, (float) i / 16.0f);
     // Custom chop kit: one entry per pad. The defaults (own slice, no shift, forward, 0 dB, no choke group) are the plain chop sampler.
     for (int n = 1; n <= 16; ++n)
     {
@@ -623,6 +625,7 @@ RelicProcessor::RelicProcessor()
     }
     for (int i = 0; i < 7; ++i) degShapes[(size_t) i] = apvts.getRawParameterValue ("chord_deg_" + juce::String (i + 1) + "_shape");
     for (int i = 0; i < 64; ++i) patSteps[(size_t) i] = apvts.getRawParameterValue ("arp_pat_" + juce::String (i + 1));
+    for (int i = 0; i < 15; ++i) chopPts[(size_t) i] = apvts.getRawParameterValue ("chop_pt_" + juce::String (i + 1));
     for (int i = 0; i < 16; ++i)
     {
         const juce::String k = "chop_kit_" + juce::String (i + 1) + "_";
@@ -705,6 +708,14 @@ int RelicProcessor::chopSlices (const SampleData& s, double bpm, double* out) co
         for (size_t i = 0; i < s.onsets.size() && m < count - 1; ++i) if (s.onsets[i] > 0.002f) b[m++] = s.onsets[i];
         std::sort (b, b + m); for (int i = 0; i < m; ++i) out[i + 1] = b[i];
         count = m + 1; out[count] = 1.0;
+    }
+    else if (mode == 3)
+    {
+        double b[16]; int m = 0;
+        for (int i = 1; i < count; ++i) b[m++] = chopPts[(size_t) i - 1]->load();
+        std::sort (b, b + m); double last = 0.0;
+        for (int i = 0; i < m; ++i) { last = std::max (last + 0.002, (double) b[i]); out[i + 1] = std::min (last, 1.0 - 0.002 * (m - i)); }
+        out[count] = 1.0;
     }
     else
     {

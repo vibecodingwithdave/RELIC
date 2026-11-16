@@ -182,6 +182,7 @@ private:
     Snap snapshot() const; void applySnap (const Snap&); void flushPending();
     std::vector<Snap> undoS, redoS; Snap cur, pending; int quiet = 0; juce::Random rng;
     std::array<std::atomic<float>*, 16> rhythmTypes {}, rhythmVelocities {}; std::array<std::atomic<float>*, 64> patSteps {}; std::array<std::atomic<float>*, 7> degShapes {};
+    std::array<std::atomic<float>*, 15> chopPts {};
     std::array<std::atomic<float>*, 16> kitSlice {}, kitPitch {}, kitRev {}, kitLevel {}, kitChoke {};
     std::atomic<float>* p (const char* id) const { return apvts.getRawParameterValue (id); }
 
