@@ -182,6 +182,7 @@ RelicEditor::RelicEditor (RelicProcessor& p)
 
     // ---- CHORDS and ARP tabs ----
     chordDisp = std::make_unique<ui::ChordDisplay> (proc); addAndMakeVisible (*chordDisp); chordGroup.push_back (chordDisp.get());
+    shapeEditor = std::make_unique<ui::ShapeEditor> (proc); addAndMakeVisible (*shapeEditor); chordGroup.push_back (shapeEditor.get());
     arpDisp   = std::make_unique<ui::ArpDisplay> (proc);   addAndMakeVisible (*arpDisp);   arpGroup.push_back (arpDisp.get());
     rhythmLane = std::make_unique<ui::RhythmLane> (proc); addAndMakeVisible (*rhythmLane); arpGroup.push_back (rhythmLane.get());
     patternLane = std::make_unique<ui::PatternLane> (proc); addAndMakeVisible (*patternLane); arpGroup.push_back (patternLane.get());
@@ -583,6 +584,13 @@ void RelicEditor::updateModView()
     for (int i = 0; i < 2; ++i) modPageBtn[i]->setToggleState (i == modPage, juce::dontSendNotification);
 }
 
+void RelicEditor::updateChordView()
+{
+    if (shapeEditor == nullptr || currentTab != 6) return;
+    const bool custom = (int) proc.apvts.getRawParameterValue ("chord_mode")->load() == 2;
+    shapeEditor->setVisible (custom); chordDisp->setVisible (! custom);
+}
+
 void RelicEditor::updateArpView()
 {
     if (patternLane == nullptr || currentTab != 5) return;
@@ -618,7 +626,7 @@ void RelicEditor::setTab (int t)
     for (auto* c : envGroup) c->setVisible (t == 9);
     for (auto* c : fx4Group) c->setVisible (t == 10);
     for (auto* c : texGroup) c->setVisible (t == 11);
-    updateTextureView(); updateArpView();
+    updateTextureView(); updateArpView(); updateChordView();
     updateSamplerView();
     repaint();
 }
@@ -628,7 +636,7 @@ void RelicEditor::timerCallback()
     noteToggles["arp_run"]->setButtonText (proc.apvts.getRawParameterValue ("arp_run")->load() > 0.5f ? "GO" : "STOP");
     fxAB->setButtonText (proc.fxSlotActive() == 0 ? "EFFECTS A" : "EFFECTS B"); fxAB->setToggleState (proc.fxSlotActive() == 1, juce::dontSendNotification);
     splitBtn->setButtonText (proc.apvts.getRawParameterValue ("split_on")->load() > 0.5f ? "SPLIT " + juce::MidiMessage::getMidiNoteName ((int) proc.apvts.getRawParameterValue ("split_note")->load(), true, true, 3) : juce::String ("SPLIT"));
-    updateSamplerView(); updateTextureView(); updateArpView();
+    updateSamplerView(); updateTextureView(); updateArpView(); updateChordView();
     proc.historyTick(); undoBtn->setEnabled (proc.canUndo()); redoBtn->setEnabled (proc.canRedo()); lockFxBtn->setToggleState (proc.lockFx.load(), juce::dontSendNotification);
     if (proc.getPresetName() != lastPresetName) { lastPresetName = proc.getPresetName(); repaint (R (600, 690, 590, 52)); }
     if (auto* c = choiceParam (proc.apvts, "waveform")) waveName->setButtonText (c->getCurrentChoiceName().toUpperCase());
@@ -926,7 +934,7 @@ void RelicEditor::resized()
     browser->setBounds (R (548, 150, 724, 494));
 
     // CHORDS and ARP tabs
-    chordDisp->setBounds (R (548, 156, 724, 170)); arpDisp->setBounds (R (548, 156, 724, 96));
+    chordDisp->setBounds (R (548, 156, 724, 170)); shapeEditor->setBounds (R (548, 156, 724, 170)); arpDisp->setBounds (R (548, 156, 724, 96));
     rhythmLane->setBounds (R (548, 258, 724, 76)); patternLane->setBounds (R (548, 156, 724, 96));
     const float colX[4] = { 548, 728, 908, 1088 };
     steppers["chord_key"]->setBounds (R (colX[0], 340, 172, 70)); steppers["chord_scale"]->setBounds (R (colX[1], 340, 172, 70));

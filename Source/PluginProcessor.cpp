@@ -245,7 +245,9 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     choice ("chord_key", "Chord Key", { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0);
     choice ("chord_scale", "Chord Scale", { "Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian", "Harmonic Minor", "Melodic Minor" }, 0);
     choice ("chord_type", "Chord Type", { "Triad", "Sus2", "Sus4", "7th", "9th", "Add9", "Power", "11th", "13th" }, 0);
-    choice ("chord_mode", "Chord Mode", { "Scale", "Fixed" }, 0);
+    choice ("chord_mode", "Chord Mode", { "Scale", "Fixed", "Custom" }, 0);
+    { static const int triad[7] = { 0x91, 0x89, 0x89, 0x91, 0x91, 0x89, 0x49 };       // Custom mode: one shape per scale degree, as a bit mask of semitones above the root
+      for (int i = 1; i <= 7; ++i) integer ("chord_deg_" + juce::String (i) + "_shape", "Chord Degree " + juce::String (i) + " Shape", 0, (1 << 22) - 1, triad[i - 1]); }
     choice ("chord_shape", "Chord Shape", { "MAJ", "MIN", "MAJ7", "MIN7", "DOM7", "MAJ9", "MIN9", "DOM9", "MAJ11", "MIN11", "MAJ13", "SUS2", "SUS4", "ADD9", "6", "MIN6", "DIM", "DIM7", "AUG", "9SUS4", "13SUS4", "7#5", "7#5#9", "7b9" }, 2);
     toggle ("voice_lead", "Voice Lead", false);
     integer ("chord_inversion", "Chord Inversion", 0, 3, 0);
@@ -485,6 +487,7 @@ RelicProcessor::RelicProcessor()
         rhythmTypes[(size_t) i] = apvts.getRawParameterValue (id + "_type");
         rhythmVelocities[(size_t) i] = apvts.getRawParameterValue (id + "_velocity");
     }
+    for (int i = 0; i < 7; ++i) degShapes[(size_t) i] = apvts.getRawParameterValue ("chord_deg_" + juce::String (i + 1) + "_shape");
     for (int i = 0; i < 64; ++i) patSteps[(size_t) i] = apvts.getRawParameterValue ("arp_pat_" + juce::String (i + 1));
     installFactoryPresets();
 }
@@ -536,6 +539,7 @@ rf::ChordArpSettings RelicProcessor::readChordArp() const
         c.rhythm[(size_t) i].type = (int) rhythmTypes[(size_t) i]->load();
         c.rhythm[(size_t) i].velocity = rhythmVelocities[(size_t) i]->load();
     }
+    for (int i = 0; i < 7; ++i) c.degShape[(size_t) i] = (int) degShapes[(size_t) i]->load();
     c.patLength = (int) v ("arp_pat_length"); for (int i = 0; i < 64; ++i) c.pattern[(size_t) i] = (int) patSteps[(size_t) i]->load();
     c.octaves = (int) v ("arp_octaves"); c.gate = v ("arp_gate"); c.swing = v ("arp_swing"); c.human = v ("arp_human");
     return c;

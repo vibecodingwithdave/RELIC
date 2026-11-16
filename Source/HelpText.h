@@ -14,6 +14,7 @@ inline juce::String familyKey (juce::String id)
     if (id.startsWith ("osc3_")) return "osc2_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("lfo2_")) return "lfo1_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("menv2_")) return "menv1_" + id.fromFirstOccurrenceOf ("_", false, false);
+    if (id.startsWith ("chord_deg_")) return "chord_deg_1_shape";
     if (id.startsWith ("arp_pat_") && id != "arp_pat_length") return "arp_pat_1";
     if (id.length() > 5 && id.startsWith ("mod") && id[3] >= '2' && id[3] <= '8' && id[4] == '_') return "mod1_" + id.substring (5);
     return id;
@@ -223,7 +224,7 @@ inline const Table& params()
         { "chord_type", "What kind of chord each key plays: triad, sus2, sus4, 7th, 9th, add9, power, 11th or 13th." },
         { "chord_voicing", "How the chord notes are spread out: close, open, drop 2 or spread." },
         { "chord_inversion", "Turns the chord over: 0 is the root position, higher values move the bottom notes up." },
-        { "chord_mode", "Scale: chords follow the key and scale. Fixed: one chord shape under every key, ignoring the scale." },
+        { "chord_mode", "Scale: chords follow the key and scale. Fixed: one chord shape under every key, ignoring the scale. Custom: your own chord shape for each scale degree, edited on the grid." },
         { "chord_shape", "In Fixed mode, which chord shape is played under every key." },
         { "chord_lock", "Scale lock: keys outside the scale are moved to the nearest scale note." },
         { "chord_strum_ms", "Spreads the chord notes out in time like a strum, in milliseconds per note." },
@@ -232,6 +233,7 @@ inline const Table& params()
         { "arp_on", "Arpeggiator: plays the held notes (or chord) one after another." },
         { "arp_div", "Rate: the length of each arp step. Triplet (T) and dotted (D) lengths are included." },
         { "arp_mode", "Pattern: Up, Down, Up-Down, Down-Up, Random, Played, Chord, Waterfall (overlapping notes that cascade up and mirror down), or Custom (a pattern of up to 64 steps that you draw)." },
+        { "chord_deg_1_shape", "The Custom chord shape of this scale degree: the notes above its root that the chord plays. Edit it on the grid; used when Mode is Custom." },
         { "arp_pat_length", "How many steps the Custom pattern has, from 1 to 64 (four bars of 16). Right-click the pattern to change it." },
         { "arp_pat_1", "The note number of this Custom pattern step: 0 is the lowest held note, 1 the next, and past the last one it continues an octave up. Negative numbers go down." },
         { "arp_octaves", "How many octaves the arp covers." },

@@ -158,7 +158,7 @@ private:
     using Snap = std::vector<float>;
     Snap snapshot() const; void applySnap (const Snap&); void flushPending();
     std::vector<Snap> undoS, redoS; Snap cur, pending; int quiet = 0; juce::Random rng;
-    std::array<std::atomic<float>*, 16> rhythmTypes {}, rhythmVelocities {}; std::array<std::atomic<float>*, 64> patSteps {};
+    std::array<std::atomic<float>*, 16> rhythmTypes {}, rhythmVelocities {}; std::array<std::atomic<float>*, 64> patSteps {}; std::array<std::atomic<float>*, 7> degShapes {};
     std::atomic<float>* p (const char* id) const { return apvts.getRawParameterValue (id); }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RelicProcessor)

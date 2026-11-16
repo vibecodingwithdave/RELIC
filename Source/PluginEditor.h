@@ -862,6 +862,62 @@ public:
     static inline const char* kScaleNames[9] = { "MAJOR", "MINOR", "DORIAN", "PHRYGIAN", "LYDIAN", "MIXOLYDIAN", "LOCRIAN", "HARMONIC MINOR", "MELODIC MINOR" };
 };
 
+// CUSTOM chord shapes: one row per scale degree, one cell per semitone above its root (0 to 21). Click a cell to add or remove that note.
+// Right-click a row for ready-made shapes, or to copy it to every degree.
+class ShapeEditor : public Display
+{
+public:
+    ShapeEditor (RelicProcessor& p) : Display (p) { setTooltip ("Custom chord shapes: each row is a scale degree, each cell a note above its root (0 = the root, 4 = a major third, 7 = a fifth). Click to add or remove. Right-click a row for ready-made shapes."); }
+    void paint (juce::Graphics& g) override
+    {
+        paintFrame (g); const auto s = proc.readChordArp(); const int hot = proc.chordDegreeShown.load();
+        static const char* roman[7] = { "I", "II", "III", "IV", "V", "VI", "VII" };
+        for (int c = 0; c < 22; ++c) { g.setColour (parchment.withAlpha (c % 12 == 0 ? 0.9f : 0.5f)); drawText (g, juce::String (c), colBounds (c).withHeight (12.0f).withY (grid().getY() - 13.0f), 9, juce::Justification::centred); }
+        for (int d = 0; d < 7; ++d)
+        {
+            const auto lab = rowBounds (d).withWidth (labelWidth());
+            g.setColour (s.chordOn && d == hot ? lime : parchment); drawText (g, juce::String (roman[d]) + "  " + juce::String (rf::chordName (d, s)), lab.translated (2.0f, 0), 11, juce::Justification::centredLeft);
+            for (int c = 0; c < 22; ++c)
+            {
+                const auto b = cellBounds (d, c).reduced (1.5f); const bool on = (s.degShape[(size_t) d] & (1 << c)) != 0;
+                g.setColour (on ? lime.withAlpha (s.chordOn && s.chordMode == 2 ? 0.85f : 0.45f) : lime.withAlpha (0.07f)); g.fillRoundedRectangle (b, 3);
+            }
+        }
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        for (int d = 0; d < 7; ++d)
+        {
+            if (! rowBounds (d).contains (e.position)) continue;
+            if (e.mods.isPopupMenu())
+            {
+                juce::PopupMenu menu; juce::PopupMenu shapes; for (int i = 0; i < 24; ++i) shapes.addItem (1 + i, juce::String (rf::fixedShapeName (i)).isEmpty() ? "MAJ" : juce::String (rf::fixedShapeName (i)).toUpperCase());
+                menu.addSubMenu ("Set this row to a shape", shapes); menu.addItem (100, "Copy this row to every degree"); menu.addItem (101, "Reset all rows (major scale triads)"); menu.addItem (102, "Clear this row");
+                auto safe = juce::Component::SafePointer<ShapeEditor> (this);
+                menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe, d] (int r)
+                {
+                    if (safe == nullptr) return;
+                    if (r >= 1 && r <= 24) { int m = 0; for (int iv : rf::fixedShape (r - 1)) if (iv < 22) m |= 1 << iv; safe->set (d, m); }
+                    if (r == 100) { const int m = (int) safe->proc.apvts.getRawParameterValue (safe->pid (d))->load(); for (int k = 0; k < 7; ++k) safe->set (k, m); }
+                    if (r == 101) { static const int t[7] = { 0x91, 0x89, 0x89, 0x91, 0x91, 0x89, 0x49 }; for (int k = 0; k < 7; ++k) safe->set (k, t[k]); }
+                    if (r == 102) safe->set (d, 0);
+                });
+                return;
+            }
+            for (int c = 0; c < 22; ++c) if (cellBounds (d, c).contains (e.position))
+            { set (d, (int) proc.apvts.getRawParameterValue (pid (d))->load() ^ (1 << c)); return; }
+        }
+    }
+private:
+    juce::String pid (int d) const { return "chord_deg_" + juce::String (d + 1) + "_shape"; }
+    float labelWidth() const { return 96.0f; }
+    juce::Rectangle<float> grid() const { auto b = getLocalBounds().toFloat().reduced (12, 6); b.removeFromTop (14); return b; }
+    juce::Rectangle<float> rowBounds (int d) const { const auto b = grid(); const float h = b.getHeight() / 7; return { b.getX(), b.getY() + h * d, b.getWidth(), h }; }
+    juce::Rectangle<float> colBounds (int c) const { const auto b = grid(); const float w = (b.getWidth() - labelWidth()) / 22; return { b.getX() + labelWidth() + w * c, b.getY(), w, b.getHeight() }; }
+    juce::Rectangle<float> cellBounds (int d, int c) const { const auto r = rowBounds (d), col = colBounds (c); return { col.getX(), r.getY(), col.getWidth(), r.getHeight() }; }
+    void set (int d, int mask) { auto* p = proc.apvts.getParameter (pid (d)); p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 ((float) mask)); p->endChangeGesture(); repaint(); }
+};
+
 // Bars for one pass of the arpeggio on a demo triad; the bar for the step that just played lights up.
 class ArpDisplay : public Display
 {
@@ -1149,7 +1205,7 @@ private:
     // TEXTURE tab: grains page or own-file page
     int texView = 0; std::unique_ptr<ui::StoneButton> texViewBtn[2], loadTex; std::vector<juce::Component*> texGrains, texShape, texOwnOnly;
     void updateTextureView();
-    void updateArpView();
+    void updateArpView(); void updateChordView();
     // MOD tab: slots 1-4 or 5-8
     int modPage = 0; std::unique_ptr<ui::StoneButton> modPageBtn[2]; void updateModView();
 
@@ -1177,7 +1233,7 @@ private:
     std::unique_ptr<ui::StoneButton> panShape;
 
     // CHORDS and ARP tabs
-    std::unique_ptr<ui::ChordDisplay> chordDisp; std::unique_ptr<ui::ArpDisplay> arpDisp; std::unique_ptr<ui::RhythmLane> rhythmLane; std::unique_ptr<ui::PatternLane> patternLane;
+    std::unique_ptr<ui::ChordDisplay> chordDisp; std::unique_ptr<ui::ArpDisplay> arpDisp; std::unique_ptr<ui::RhythmLane> rhythmLane; std::unique_ptr<ui::PatternLane> patternLane; std::unique_ptr<ui::ShapeEditor> shapeEditor;
     std::map<juce::String, std::unique_ptr<ui::Stepper>> steppers;
     std::map<juce::String, std::unique_ptr<ui::StoneButton>> noteToggles; std::vector<std::unique_ptr<juce::ButtonParameterAttachment>> noteAtts;
     ui::Stepper* addStepper (const char* id, const char* name, std::vector<juce::Component*>& group);
