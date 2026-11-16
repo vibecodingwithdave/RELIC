@@ -185,6 +185,18 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     flt ("sampleb_loop_start", "Sample B Loop Start", 0.0f, 1.0f, 0.0f);
     flt ("sampleb_loop_end", "Sample B Loop End", 0.0f, 1.0f, 1.0f);
     choice ("sampleb_xfade", "Sample B Xfade", { "Off", "5 ms", "10 ms", "20 ms", "50 ms", "100 ms", "200 ms", "500 ms" }, 0);
+    // Own envelope for each sample layer. Off by default: the layer then follows the voice envelope only, as before. On, the layer is also shaped by its own
+    // ADSR (the voice envelope still gates the whole voice, so keep its release at least as long as the longest layer release).
+    toggle ("sample_env_own", "Sample Env Own", false);
+    flt ("sample_attack_ms", "Sample Attack Ms", 0.0f, 5000.0f, 5.0f, 0.3f);
+    flt ("sample_decay_ms", "Sample Decay Ms", 0.0f, 5000.0f, 200.0f, 0.3f);
+    flt ("sample_sustain", "Sample Sustain", 0.0f, 1.0f, 0.8f);
+    flt ("sample_release_ms", "Sample Release Ms", 0.0f, 5000.0f, 200.0f, 0.3f);
+    toggle ("sampleb_env_own", "Sample B Env Own", false);
+    flt ("sampleb_attack_ms", "Sample B Attack Ms", 0.0f, 5000.0f, 5.0f, 0.3f);
+    flt ("sampleb_decay_ms", "Sample B Decay Ms", 0.0f, 5000.0f, 200.0f, 0.3f);
+    flt ("sampleb_sustain", "Sample B Sustain", 0.0f, 1.0f, 0.8f);
+    flt ("sampleb_release_ms", "Sample B Release Ms", 0.0f, 5000.0f, 200.0f, 0.3f);
     // Texture layer (granular cloud from the loaded sample)
     flt ("tex_level", "Texture Level", 0.0f, 1.0f, 0.0f);
     flt ("tex_pos", "Texture Position", 0.0f, 1.0f, 0.5f);
@@ -535,7 +547,7 @@ void RelicProcessor::noteOn (int note, float vel)
             vo.sliceA = std::floor (b[pad] * nF); vo.sliceB = std::min (nF - 1.0, std::floor (b[pad + 1] * nF));
             if (vo.sliceB < vo.sliceA + 2.0) vo.sliceB = std::min (nF - 1.0, vo.sliceA + 2.0);
             vo.samplePos = p ("sample_reverse")->load() > 0.5f ? vo.sliceB - 1.0 : vo.sliceA;
-            vo.fl.reset(); vo.fr.reset(); vo.fl2.reset(); vo.fr2.reset(); vo.mpL = vo.mpR = 0.0f; vo.env.noteOn(); return;
+            vo.fl.reset(); vo.fr.reset(); vo.fl2.reset(); vo.fr2.reset(); vo.mpL = vo.mpR = 0.0f; vo.envA.level = vo.envB.level = 0.0f; vo.envA.noteOn(); vo.envB.noteOn(); vo.env.noteOn(); return;
         }
     }
 
@@ -582,6 +594,7 @@ void RelicProcessor::noteOn (int note, float vel)
       for (int i = 0; i < 8192; ++i) { vo.nseed = vo.nseed * 1664525u + 1013904223u; vo.ks[i] = i >= 8192 - (int) D ? ((vo.nseed >> 8) / 8388608.0f - 1.0f) * 0.7f : 0.0f; }   // the burst sits just behind the write position
       for (int k = 0; k < 6; ++k) { vo.bellAmp[k] = 1.0f; vo.phase[k] = 0.0; } }
     vo.menv[0].level = vo.menv[1].level = 0.0f; vo.menv[0].noteOn(); vo.menv[1].noteOn();
+    vo.envA.level = vo.envB.level = 0.0f; vo.envA.noteOn(); vo.envB.noteOn();
     vo.env.noteOn();
 }
 
@@ -677,6 +690,9 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
         rateB = smpB->rate / sr; tuneMulB = std::exp2 ((double) p ("sampleb_tune_ct")->load() / 1200.0);
         { static const double xms[8] = { 0, 5, 10, 20, 50, 100, 200, 500 }; xfBF = xms[juce::jlimit (0, 7, (int) p ("sampleb_xfade")->load())] * 0.001 * smpB->rate; }
     }
+    const bool ownA = p ("sample_env_own")->load() > 0.5f, ownB = indepB && p ("sampleb_env_own")->load() > 0.5f;
+    const float envAp[4] = { p ("sample_attack_ms")->load(), p ("sample_decay_ms")->load(), p ("sample_sustain")->load(), p ("sample_release_ms")->load() };
+    const float envBp[4] = { p ("sampleb_attack_ms")->load(), p ("sampleb_decay_ms")->load(), p ("sampleb_sustain")->load(), p ("sampleb_release_ms")->load() };
     const float texLevel = p ("tex_level")->load(); const bool texOn = haveS && texLevel > 0.0f;
     const float texPos = p ("tex_pos")->load(), texSpread = p ("tex_spread")->load(), texSize = p ("tex_size_ms")->load(), texDens = p ("tex_density")->load(), texJit = p ("tex_jitter_ct")->load();
     const float texGain = texLevel * (p ("sample_normalize")->load() > 0.5f && haveS ? 1.0f / smp->peak : 1.0f) * 0.7f / std::sqrt (std::max (1.0f, texDens * texSize * 0.001f));
@@ -741,6 +757,9 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                 if (vo.env.stage == rf::Adsr::Release && vo.menv[k].stage != rf::Adsr::Release && vo.menv[k].stage != rf::Adsr::Idle) vo.menv[k].noteOff();
                 ev[k] = vo.menv[k].next (me[k][0], me[k][1], me[k][2], me[k][3], sr);
             }
+            float ea = 1.0f, eb = 1.0f;       // own envelopes of the sample layers (1 when off)
+            if (ownA) { if (vo.env.stage == rf::Adsr::Release && vo.envA.stage != rf::Adsr::Release && vo.envA.stage != rf::Adsr::Idle) vo.envA.noteOff(); ea = vo.envA.next (envAp[0], envAp[1], envAp[2], envAp[3], sr); }
+            if (ownB) { if (vo.env.stage == rf::Adsr::Release && vo.envB.stage != rf::Adsr::Release && vo.envB.stage != rf::Adsr::Idle) vo.envB.noteOff(); eb = vo.envB.next (envBp[0], envBp[1], envBp[2], envBp[3], sr); }
             for (int k = 0; k < nSlots; ++k)
             {
                 const int sc = slots[k].src;
@@ -803,7 +822,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             if (haveS && vo.sampleActive && vo.chop)
             {
                 const int nn = smp->frames();
-                const float g = chopGain * vo.velocity * lvl;
+                const float g = chopGain * vo.velocity * lvl * ea;
                 float cl = cubic (smp->L, vo.samplePos, nn), cr = cubic (smp->R, vo.samplePos, nn);
                 const double cxf = loopOn && ! rev ? std::min (xfF, 0.5 * (vo.sliceB - vo.sliceA)) : 0.0;
                 if (cxf > 0.0 && vo.samplePos >= vo.sliceB - cxf)
@@ -840,7 +859,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                     float bl = 0.0f, br = 0.0f; if (pb >= 0.0 && pb < (double) nb - 1.0) { bl = cubic (smpB->L, pb, nb) * gB; br = cubic (smpB->R, pb, nb) * gB; }
                     sl = sl * (1.0f - morph) + bl * morph; sr_ = sr_ * (1.0f - morph) + br * morph;
                 }
-                pl += sl * vSamp * vo.velocity * wA; pr += sr_ * vSamp * vo.velocity * wA;
+                pl += sl * vSamp * vo.velocity * wA * ea; pr += sr_ * vSamp * vo.velocity * wA * ea;
                 const double step = std::pow (2.0, ((double) vo.note - rootSemis) / 12.0) * rateRatio * pf * tuneMulA;
                 if (! rev)
                 {
@@ -865,7 +884,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                     const double u = (vo.samplePosB - (loopBB - bxf)) / bxf, p2 = loopAB + u * bxf; const float gi = (float) std::sin (u * 1.5707963), go = (float) std::cos (u * 1.5707963);
                     bl = bl * go + cubic (smpB->L, p2, nb) * gi; br = br * go + cubic (smpB->R, p2, nb) * gi;
                 }
-                pl += bl * vSampB * vo.velocity * wB; pr += br * vSampB * vo.velocity * wB;
+                pl += bl * vSampB * vo.velocity * wB * eb; pr += br * vSampB * vo.velocity * wB * eb;
                 const double stepB = std::pow (2.0, ((double) vo.note - rootB) / 12.0) * rateB * pf * tuneMulB;
                 if (! revB)
                 {

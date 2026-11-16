@@ -119,6 +119,7 @@ private:
         int zone = 0;                                                           // keyboard split: 0 none, 1 sample only, 2 synth only
         bool chop = false; double sliceA = 0.0, sliceB = 0.0;   // chop voice: slice bounds in frames
         rf::Adsr env, menv[2];                           // amp envelope; two modulation envelopes
+        rf::Adsr envA, envB;                             // optional own envelopes of sample layers A and B
         rf::Svf fl, fr, fl2, fr2; float mpL = 0.0f, mpR = 0.0f;   // fl2/fr2: second pole pair for the cascaded models; mp*: MPC60 output low-pass state
     };
     static constexpr int MaxVoices = 16;

@@ -133,5 +133,45 @@ for i, n in enumerate((48, 52, 55, 59, 62, 66, 69, 72, 76, 79)): ev += [(bytes([
 xs = Ps(ev, duration=2.0, sample_rate=SR, num_channels=2)
 check('ten notes with both layers looping, one reversed: finite and never above full scale', np.isfinite(xs).all() and np.abs(xs).max() <= 1.0 + 1e-6, f'(peak {np.abs(xs).max():.3f})')
 
+
+# =====================  own envelopes per sample layer  =====================
+LOOPA = dict(sample_loop=1, loop_start=0.0, loop_end=0.5); LOOPB = dict(sampleb_loop=1, sampleb_loop_start=0.0, sampleb_loop_end=0.5)   # 1 s of a pure tone loops seamlessly
+check('Own-envelope defaults: off, attack 5 ms, decay 200 ms, sustain 0.8, release 200 ms (both layers)',
+      not bool(P0.sample_env_own) and abs(P0.sample_attack_ms - 5) < 0.1 and abs(P0.sample_decay_ms - 200) < 1 and abs(P0.sample_sustain - 0.8) < 1e-3 and abs(P0.sample_release_ms - 200) < 1
+      and not bool(P0.sample_b_env_own) and abs(P0.sample_b_attack_ms - 5) < 0.1 and abs(P0.sample_b_release_ms - 200) < 1)
+PE = plugin(dict(sample_env_own=1, sample_attack_ms=123, sample_decay_ms=45, sample_sustain=0.3, sample_release_ms=678, sampleb_env_own=1, sampleb_attack_ms=234, sampleb_decay_ms=56, sampleb_sustain=0.4, sampleb_release_ms=789))
+PE2 = load_plugin(PATH); PE2.raw_state = PE.raw_state
+check('every own-envelope setting survives a save and restore',
+      bool(PE2.sample_env_own) and abs(PE2.sample_attack_ms - 123) < 1 and abs(PE2.sample_decay_ms - 45) < 1 and abs(PE2.sample_sustain - 0.3) < 1e-3 and abs(PE2.sample_release_ms - 678) < 2
+      and bool(PE2.sample_b_env_own) and abs(PE2.sample_b_attack_ms - 234) < 1 and abs(PE2.sample_b_decay_ms - 56) < 1 and abs(PE2.sample_b_sustain - 0.4) < 1e-3 and abs(PE2.sample_b_release_ms - 789) < 2)
+NEWE = ['sample_env_own', 'sample_attack_ms', 'sample_decay_ms', 'sample_sustain', 'sample_release_ms', 'sampleb_env_own', 'sampleb_attack_ms', 'sampleb_decay_ms', 'sampleb_sustain', 'sampleb_release_ms']
+xa = render(plugin(LOOPA)); xb = render(plugin(LOOPA, drop=NEWE))
+check('a project saved before the own envelopes existed renders the same', np.allclose(xa, xb, atol=1e-6))
+xc = render(plugin({**LOOPA, **dict(sample_attack_ms=900, sample_decay_ms=900, sample_sustain=0.0, sample_release_ms=900)}))
+check('with Env Own off, the layer envelope settings have no effect', np.allclose(xa, xc, atol=1e-6))
+xc = render(plugin({**dict(sample_morph=0.5, sampleb_env_own=1, sampleb_attack_ms=900, sampleb_sustain=0.0), }, SINE, {'samplePathB': SINE2}))
+xd = render(plugin(dict(sample_morph=0.5), SINE, {'samplePathB': SINE2}))
+check('B Env Own does nothing while B is not independent (the classic morph is unchanged)', np.allclose(xc, xd, atol=1e-6))
+
+steady = rms(xa, 0.7, 1.2)
+check('control: with the layer envelope off, the sample starts at full level', rms(xa, 0.0, 0.08) > 0.8 * steady)
+x = render(plugin({**LOOPA, **dict(sample_env_own=1, sample_attack_ms=400, sample_decay_ms=0, sample_sustain=1.0)}))
+check('A attack 400 ms: quiet at the start, full level after the attack', rms(x, 0.0, 0.08) < 0.35 * rms(x, 0.7, 1.2) and rms(x, 0.7, 1.2) > 0.8 * steady, f'(start {rms(x,0,0.08):.3f}, later {rms(x,0.7,1.2):.3f})')
+x = render(plugin({**LOOPA, **dict(sample_env_own=1, sample_attack_ms=2, sample_decay_ms=50, sample_sustain=0.25)}))
+check('A decay to sustain 0.25 settles at a quarter of the level', abs(rms(x, 1.0, 1.5) / steady - 0.25) < 0.04, f'(x{rms(x,1.0,1.5)/steady:.2f})')
+# release: B follows the 800 ms voice release, A has its own 100 ms release
+LA = {**LOOPA, **LOOPB}
+xr = render(layers({**LA, **dict(release_ms=800, sample_env_own=1, sample_attack_ms=2, sample_decay_ms=0, sample_sustain=1.0, sample_release_ms=100)}), hold=1.5, dur=2.4)
+a_st, b_st = amp(xr, 440, 0.6, 1.2), amp(xr, 660, 0.6, 1.2)
+check('A own release 100 ms ends quickly after the key is let go, while B follows the voice release (800 ms)', amp(xr, 440, 1.75, 1.95) < 0.06 * a_st and amp(xr, 660, 1.75, 1.95) > 0.4 * b_st, f'(A {amp(xr,440,1.75,1.95)/a_st:.2f}, B {amp(xr,660,1.75,1.95)/b_st:.2f} of steady)')
+# independent attack per layer
+xi = render(layers({**LA, **dict(sample_env_own=1, sample_attack_ms=400, sample_decay_ms=0, sample_sustain=1.0, sampleb_env_own=1, sampleb_attack_ms=1, sampleb_decay_ms=0, sampleb_sustain=1.0)}))
+a_st, b_st = amp(xi, 440, 0.7, 1.2), amp(xi, 660, 0.7, 1.2)
+check('A attacks slowly and B instantly: at the start B is full and A is quiet', amp(xi, 660, 0.01, 0.08) > 0.7 * b_st and amp(xi, 440, 0.01, 0.08) < 0.35 * a_st and abs(a_st / amp(render(layers(LA)), 440, 0.7, 1.2) - 1) < 0.1,
+      f'(start: B {amp(xi,660,0.01,0.08)/b_st:.2f}, A {amp(xi,440,0.01,0.08)/a_st:.2f} of steady)')
+# chop pads follow layer A's envelope
+xc = render(plugin(dict(chop_on=1, chop_mode=0, chop_count=4, sample_env_own=1, sample_attack_ms=300, sample_decay_ms=0, sample_sustain=1.0)), note=36, hold=1.0, dur=1.4)
+check('chop pads follow layer A\'s envelope', rms(xc, 0.0, 0.06) < 0.3 * rms(xc, 0.3, 0.45), f'(start {rms(xc,0,0.06):.3f}, later {rms(xc,0.3,0.45):.3f})')
+
 print(f"\nRESULT: {sum(rows)} of {len(rows)} sample-layer checks passed")
 sys.exit(0 if all(rows) else 1)
