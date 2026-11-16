@@ -197,25 +197,54 @@ RelicEditor::RelicEditor (RelicProcessor& p)
     addNoteToggle ("chord_on", "CHORD", 0.4f); addNoteToggle ("arp_on", "ARP", 0.4f);
 
     // ---- SAMPLER tab ----
+    // SLOT A / SLOT B choose which sample layer the tab edits. Each layer has its own controls and, when switched on, its own envelope.
     sampDisp = std::make_unique<ui::SampleDisplay> (proc); addAndMakeVisible (*sampDisp); sampGroup.push_back (sampDisp.get());
     {
-        auto mk = [this] (const char* text, const char* paramId)
+        auto mk = [this] (const char* text, const char* paramId, std::vector<juce::Component*>* set)
         {
             auto b = std::make_unique<ui::StoneButton> (text, true, paramId != nullptr); b->textScale = 0.4f;
-            if (paramId) sampAtts.push_back (std::make_unique<juce::ButtonParameterAttachment> (*proc.apvts.getParameter (paramId), *b, nullptr));
-            addAndMakeVisible (*b); sampGroup.push_back (b.get()); sampButtons.push_back (std::move (b));
+            if (paramId) { sampAtts.push_back (std::make_unique<juce::ButtonParameterAttachment> (*proc.apvts.getParameter (paramId), *b, nullptr)); b->setTooltip (help::forId (paramId)); }
+            addAndMakeVisible (*b); sampGroup.push_back (b.get()); if (set) set->push_back (b.get()); sampButtons.push_back (std::move (b));
         };
-        mk ("LOAD", nullptr); mk ("LOOP", "sample_loop"); mk ("REVERSE", "sample_reverse"); mk ("NORM", "sample_normalize");
+        mk ("LOAD", nullptr, nullptr);                                                                                               // 0: loads into the slot being edited
+        mk ("LOOP", "sample_loop", &sampSetA); mk ("REVERSE", "sample_reverse", &sampSetA); mk ("NORM", "sample_normalize", &sampSetA);   // 1-3: slot A
+        mk ("LOOP", "sampleb_loop", &sampSetB); mk ("REVERSE", "sampleb_reverse", &sampSetB); mk ("NORM", "sampleb_normalize", &sampSetB); // 4-6: slot B
+        mk ("OWN ENV", "sample_env_own", &sampSetA); mk ("OWN ENV", "sampleb_env_own", &sampSetB);                                    // 7-8
+        mk ("B LAYER", "sampleb_indep", &sampSetB);                                                                                   // 9
         sampButtons[0]->onClick = [this]
         {
-            chooser = std::make_unique<juce::FileChooser> ("Choose a sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg;*.m4a");
+            chooser = std::make_unique<juce::FileChooser> (sampSlot == 0 ? "Choose a sample" : "Choose a sample for slot B", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg;*.m4a");
             chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
-            { auto f = fc.getResult(); if (f.existsAsFile()) proc.loadSampleFile (f); sampDisp->repaint(); });
+            {
+                auto f = fc.getResult();
+                if (f.existsAsFile())
+                {
+                    if (sampSlot == 0) proc.loadSampleFile (f);
+                    else { proc.loadSampleFile (f, false, true); if (auto* q = proc.apvts.getParameter ("sample_morph")) if (q->getValue() < 0.01f) q->setValueNotifyingHost (0.5f); }
+                }
+                sampDisp->repaint();
+            });
         };
+        const char* sn[2] = { "SLOT A", "SLOT B" };
+        for (int i = 0; i < 2; ++i)
+        {
+            slotBtn[i] = std::make_unique<ui::StoneButton> (sn[i], true, false); slotBtn[i]->textScale = 0.4f; slotBtn[i]->setTooltip (help::forName (sn[i]));
+            slotBtn[i]->onClick = [this, i] { sampSlot = i; updateSamplerView(); };
+            addAndMakeVisible (*slotBtn[i]); sampGroup.push_back (slotBtn[i].get());
+        }
+        slotBtn[0]->setToggleState (true, juce::dontSendNotification);
     }
-    for (auto k : { std::make_pair ("sample_root", "Root"), { "sample_octave", "Octave" }, { "sample_gain", "Gain" }, { "sample_start", "Start" }, { "loop_start", "Loop in" }, { "loop_end", "Loop out" },
-                    { "attack_ms", "Attack" }, { "decay_ms", "Decay" }, { "sustain", "Sustain" }, { "release_ms", "Release" } })
-        { auto* kn = addKnobCopy (k.first, k.second); sampKnobs.push_back (kn); sampGroup.push_back (kn); }
+    {
+        auto knob = [this] (std::vector<ui::Knob*>& list, std::vector<juce::Component*>& set, const char* id, const char* name)
+        { auto* kn = addKnobCopy (id, name); list.push_back (kn); set.push_back (kn); sampGroup.push_back (kn); };
+        for (auto k : { std::make_pair ("sample_root", "Root"), { "sample_octave", "Octave" }, { "sample_tune_ct", "Tune" }, { "sample_gain", "Gain" }, { "sample_start", "Start" }, { "sample_end", "End" }, { "loop_start", "Loop in" }, { "loop_end", "Loop out" } })
+            knob (sampKnobsA, sampSetA, k.first, k.second);
+        for (auto k : { std::make_pair ("sampleb_root", "Root"), { "sampleb_octave", "Octave" }, { "sampleb_tune_ct", "Tune" }, { "sampleb_gain", "Gain" }, { "sampleb_start", "Start" }, { "sampleb_end", "End" }, { "sampleb_loop_start", "Loop in" }, { "sampleb_loop_end", "Loop out" } })
+            knob (sampKnobsB, sampSetB, k.first, k.second);
+        for (auto k : { std::make_pair ("attack_ms", "Attack"), { "decay_ms", "Decay" }, { "sustain", "Sustain" }, { "release_ms", "Release" } }) knob (envKnobsVoice, sampEnvVoice, k.first, k.second);
+        for (auto k : { std::make_pair ("sample_attack_ms", "Attack"), { "sample_decay_ms", "Decay" }, { "sample_sustain", "Sustain" }, { "sample_release_ms", "Release" } }) knob (envKnobsA, sampEnvA, k.first, k.second);
+        for (auto k : { std::make_pair ("sampleb_attack_ms", "Attack"), { "sampleb_decay_ms", "Decay" }, { "sampleb_sustain", "Sustain" }, { "sampleb_release_ms", "Release" } }) knob (envKnobsB, sampEnvB, k.first, k.second);
+    }
     mixSlider = std::make_unique<ui::MixSlider> (proc.apvts); addAndMakeVisible (*mixSlider);
     abSlider = std::make_unique<ui::MixSlider> (proc.apvts, "sample_morph", "A", "B"); addAndMakeVisible (*abSlider);
     loadB = std::make_unique<ui::StoneButton> ("LOAD B", true, false); loadB->textScale = 0.38f; addAndMakeVisible (*loadB);
@@ -226,7 +255,8 @@ RelicEditor::RelicEditor (RelicProcessor& p)
         { auto f = fc.getResult(); if (f.existsAsFile()) { proc.loadSampleFile (f, false, true); if (auto* q = proc.apvts.getParameter ("sample_morph")) if (q->getValue() < 0.01f) q->setValueNotifyingHost (0.5f); } });
     };
     sampGroup.push_back (addNoteToggle ("chop_on", "CHOP", 0.42f));
-    addStepper ("chop_mode", "Slice by", sampGroup); addStepper ("chop_count", "Slices", sampGroup); addStepper ("chop_grid", "Grid", sampGroup); addStepper ("chop_pitch", "Pitch", sampGroup); addStepper ("loop_xfade", "Loop fade", sampGroup);
+    addStepper ("chop_mode", "Slice by", sampGroup); addStepper ("chop_count", "Slices", sampGroup); addStepper ("chop_grid", "Grid", sampGroup); addStepper ("chop_pitch", "Pitch", sampGroup);
+    sampSetA.push_back (addStepper ("loop_xfade", "Loop fade", sampGroup)); sampSetB.push_back (addStepper ("sampleb_xfade", "Loop fade", sampGroup));
 
     // ---- master and filter ----
     addKnob ("master", "Master");
@@ -491,13 +521,30 @@ void RelicEditor::mouseDoubleClick (const juce::MouseEvent& e)
     if (! xyShown && juce::Rectangle<float> (124, 112, 384, 426).contains (e.position / s)) showXy (true);
 }
 
+// Shows the controls of the sample slot being edited. The envelope knobs edit the voice envelope until the slot is given an envelope of its own.
+void RelicEditor::updateSamplerView()
+{
+    if (currentTab != 0 || sampDisp == nullptr) return;
+    const bool b = sampSlot == 1;
+    const bool ownA = proc.apvts.getRawParameterValue ("sample_env_own")->load() > 0.5f, ownB = proc.apvts.getRawParameterValue ("sampleb_env_own")->load() > 0.5f;
+    const bool indep = proc.apvts.getRawParameterValue ("sampleb_indep")->load() > 0.5f, ownSel = b ? ownB : ownA;
+    auto show = [] (std::vector<juce::Component*>& v, bool on) { for (auto* c : v) c->setVisible (on); };
+    show (sampSetA, ! b); show (sampSetB, b);
+    show (sampEnvVoice, ! ownSel); show (sampEnvA, ! b && ownA); show (sampEnvB, b && ownB);
+    // slot B's own settings only count once B is a layer of its own; until then they are shown dimmed
+    for (auto* c : sampSetB) c->setAlpha (c == sampButtons[9].get() || indep ? 1.0f : 0.45f);
+    for (auto* c : sampEnvB) c->setAlpha (indep ? 1.0f : 0.45f);
+    for (int i = 0; i < 2; ++i) slotBtn[i]->setToggleState (i == sampSlot, juce::dontSendNotification);
+    sampDisp->setSlot (sampSlot);
+}
+
 void RelicEditor::setTab (int t)
 {
     currentTab = t;
     for (int i = 0; i < 11; ++i) tabs[i]->setToggleState (i == t, juce::dontSendNotification);
     for (auto* c : oscGroup) c->setVisible (t == 1);
     for (auto* c : sampGroup) c->setVisible (t == 0);
-    meter->setVisible (t == 0 || t == 1);
+    meter->setVisible (t == 1);
     for (auto* c : fxGroup)  c->setVisible (t == 2);
     for (auto* c : fx2Group) c->setVisible (t == 3);
     for (auto* c : fx3Group) c->setVisible (t == 4);
@@ -508,6 +555,7 @@ void RelicEditor::setTab (int t)
     for (auto* c : envGroup) c->setVisible (t == 9);
     for (auto* c : fx4Group) c->setVisible (t == 10);
     for (auto* c : texGroup) c->setVisible (t == 11);
+    updateSamplerView();
     repaint();
 }
 
@@ -516,6 +564,7 @@ void RelicEditor::timerCallback()
     noteToggles["arp_run"]->setButtonText (proc.apvts.getRawParameterValue ("arp_run")->load() > 0.5f ? "GO" : "STOP");
     fxAB->setButtonText (proc.fxSlotActive() == 0 ? "EFFECTS A" : "EFFECTS B"); fxAB->setToggleState (proc.fxSlotActive() == 1, juce::dontSendNotification);
     splitBtn->setButtonText (proc.apvts.getRawParameterValue ("split_on")->load() > 0.5f ? "SPLIT " + juce::MidiMessage::getMidiNoteName ((int) proc.apvts.getRawParameterValue ("split_note")->load(), true, true, 3) : juce::String ("SPLIT"));
+    updateSamplerView();
     proc.historyTick(); undoBtn->setEnabled (proc.canUndo()); redoBtn->setEnabled (proc.canRedo()); lockFxBtn->setToggleState (proc.lockFx.load(), juce::dontSendNotification);
     if (proc.getPresetName() != lastPresetName) { lastPresetName = proc.getPresetName(); repaint (R (600, 690, 590, 52)); }
     if (auto* c = choiceParam (proc.apvts, "waveform")) waveName->setButtonText (c->getCurrentChoiceName().toUpperCase());
@@ -668,14 +717,25 @@ void RelicEditor::resized()
 
     // SAMPLER tab
     sampDisp->setBounds (R (548, 156, 724, 158));
-    sampButtons[0]->setBounds (R (548, 394, 176, 38)); sampButtons[1]->setBounds (R (732, 394, 176, 38));
-    sampButtons[2]->setBounds (R (548, 438, 176, 38)); sampButtons[3]->setBounds (R (732, 438, 176, 38));
-    for (int i = 0; i < 6; ++i) sampKnobs[(size_t) i]->setBounds (R (928 + (i % 3) * 82.0f, 396 + (i / 3) * 124.0f, 76, 118));
-    for (int i = 0; i < 4; ++i) sampKnobs[(size_t) (6 + i)]->setBounds (R (556 + i * 92.0f, 486, 86, 156));
+    // Left: slot selector and the buttons of the slot being edited (the A and B sets share the same places). Right: a 6 x 2 knob grid.
+    slotBtn[0]->setBounds (R (548, 394, 112, 38)); slotBtn[1]->setBounds (R (668, 394, 112, 38));
+    sampButtons[0]->setBounds (R (548, 438, 112, 38));
+    for (int k = 0; k < 2; ++k)
+    {
+        const size_t o = k == 0 ? 1 : 4;
+        sampButtons[o]->setBounds (R (668, 438, 112, 38)); sampButtons[o + 1]->setBounds (R (548, 482, 112, 38)); sampButtons[o + 2]->setBounds (R (668, 482, 112, 38));
+        sampButtons[(size_t) (7 + k)]->setBounds (R (548, 526, 112, 38));
+    }
+    sampButtons[9]->setBounds (R (668, 526, 112, 38));
+    auto cell = [] (int col, int row) { return juce::Rectangle<float> (790.0f + col * 78.0f, 396.0f + row * 124.0f, 74.0f, 118.0f); };
+    for (auto* list : { &sampKnobsA, &sampKnobsB })
+        for (size_t i = 0; i < list->size(); ++i) { const auto c = i < 6 ? cell ((int) i, 0) : cell ((int) i - 6, 1); (*list)[i]->setBounds (R (c.getX(), c.getY(), c.getWidth(), c.getHeight())); }
+    for (auto* list : { &envKnobsVoice, &envKnobsA, &envKnobsB })
+        for (size_t i = 0; i < list->size(); ++i) { const auto c = cell (2 + (int) i, 1); (*list)[i]->setBounds (R (c.getX(), c.getY(), c.getWidth(), c.getHeight())); }
     mixSlider->setBounds (R (610, 740, 570, 46));
     loadB->setBounds (R (870, 786, 92, 36)); abSlider->setBounds (R (970, 778, 220, 46));
     noteToggles["chop_on"]->setBounds (R (548, 340, 110, 44));
-    { const char* cs[5] = { "chop_mode", "chop_count", "chop_grid", "chop_pitch", "loop_xfade" }; for (int i = 0; i < 5; ++i) steppers[cs[i]]->setBounds (R (668 + i * 121.0f, 322, 116, 66)); }
+    { const char* cs[5] = { "chop_mode", "chop_count", "chop_grid", "chop_pitch", "loop_xfade" }; for (int i = 0; i < 5; ++i) steppers[cs[i]]->setBounds (R (668 + i * 121.0f, 322, 116, 66)); steppers["sampleb_xfade"]->setBounds (R (668 + 4 * 121.0f, 322, 116, 66)); }
 
     // Knob rows start at the same height in every effect panel, with roomier spacing when a panel has only two rows.
     auto rowY = [] (int rows, int row, float shift = 0.0f) { const float pitch = rows >= 3 ? 124.0f : 150.0f; return 268.0f + shift + (float) row * pitch; };

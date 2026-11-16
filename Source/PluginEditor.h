@@ -204,9 +204,10 @@ inline juce::String formatValue (const juce::String& id, double v)
     if (id.endsWith ("_db")) return (std::abs (v) >= 10.0 ? f (v, 0) : f (v, 1)) + " dB";
     if (id.endsWith ("_ct")) return f (v, 0) + " ct";
     if (id.endsWith ("_ms")) return v >= 1000.0 ? f (v / 1000.0, 2) + " s" : f (v, 0) + " ms";
-    if (id == "sample_root") return juce::MidiMessage::getMidiNoteName ((int) std::round (v), true, true, 3);
-    if (id == "sample_octave") return (v > 0.5 ? "+" : "") + juce::String ((int) std::round (v));
-    if (id == "sample_start" || id == "loop_start" || id == "loop_end" || id == "sample_gain") return f (v * 100.0, 0) + "%";
+    if (id == "sample_root" || id == "sampleb_root") return juce::MidiMessage::getMidiNoteName ((int) std::round (v), true, true, 3);
+    if (id == "sample_octave" || id == "sampleb_octave") return (v > 0.5 ? "+" : "") + juce::String ((int) std::round (v));
+    if (id == "sample_start" || id == "sample_end" || id == "loop_start" || id == "loop_end" || id == "sample_gain"
+        || id == "sampleb_start" || id == "sampleb_end" || id == "sampleb_loop_start" || id == "sampleb_loop_end" || id == "sampleb_gain") return f (v * 100.0, 0) + "%";
     if (id == "reverb_size") return f (0.3 * std::pow (20.0, v), 1) + " s";
     if (id == "reverb_damp" || id == "reverb_mix" || id == "chorus_mix" || id == "flanger_mix" || id == "chorus_depth" || id == "flanger_depth") return f (v * 100.0, 0) + "%";
     if (id == "master" || id == "osc_level" || id == "arp_gate" || id == "arp_swing" || id == "arp_human") return f (v * 100.0, 0) + "%";
@@ -558,16 +559,18 @@ class SampleDisplay : public Display
 {
 public:
     using Display::Display;
+    void setSlot (int s) { if (s != slot) { slot = s; repaint(); } }
     void paint (juce::Graphics& g) override
     {
         paintFrame (g);
-        auto s = proc.getSample(); const float W = (float) getWidth(), H = (float) getHeight();
+        auto s = slot == 0 ? proc.getSample() : proc.getSampleB(); const float W = (float) getWidth(), H = (float) getHeight();
         if (s == nullptr)
         {
             g.setColour (lime.withAlpha (0.85f));
-            drawText (g, "DROP A SAMPLE HERE", juce::Rectangle<float> (0, H * 0.34f, W, H * 0.16f), H * 0.12f, juce::Justification::centred);
+            drawText (g, slot == 0 ? "DROP A SAMPLE HERE" : "NO SAMPLE IN SLOT B", juce::Rectangle<float> (0, H * 0.34f, W, H * 0.16f), H * 0.12f, juce::Justification::centred);
             g.setColour (lime.withAlpha (0.55f));
-            drawText (g, proc.sampleError.isNotEmpty() ? proc.sampleError : juce::String ("or press LOAD  (wav, aiff, flac, mp3)"), juce::Rectangle<float> (0, H * 0.52f, W, H * 0.1f), H * 0.07f, juce::Justification::centred);
+            drawText (g, slot == 0 && proc.sampleError.isNotEmpty() ? proc.sampleError : juce::String (slot == 0 ? "or press LOAD  (wav, aiff, flac, mp3)" : "press LOAD to put a sample in slot B"),
+                      juce::Rectangle<float> (0, H * 0.52f, W, H * 0.1f), H * 0.07f, juce::Justification::centred);
             return;
         }
         auto b = getLocalBounds().toFloat().reduced (16.0f, 28.0f);
@@ -579,10 +582,14 @@ public:
             const float lo = juce::jlimit (-1.0f, 1.0f, s->peaksMin[(size_t) k] / s->peak), hi = juce::jlimit (-1.0f, 1.0f, s->peaksMax[(size_t) k] / s->peak);
             g.drawLine (b.getX() + x, cy - hi * amp, b.getX() + x, cy - lo * amp + 1.0f, 1.2f);
         }
-        const float st = val ("sample_start"), la = val ("loop_start"), lb = val ("loop_end"); const bool loopOn = val ("sample_loop") > 0.5f;
+        const float st = val (id (0)), en = val (id (1)), la = val (id (2)), lb = val (id (3)); const bool loopOn = val (id (4)) > 0.5f;
         auto line = [&] (float v, juce::Colour c) { g.setColour (c); const float x = b.getX() + b.getWidth() * v; g.drawLine (x, b.getY(), x, b.getBottom(), 2.0f); g.fillEllipse (x - 5, b.getBottom() - 4, 10, 10); };
+        // the part before Start and after End is not played
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        if (st > 0.0f) g.fillRect (b.getX(), b.getY(), b.getWidth() * st, b.getHeight());
+        if (en < 0.999f) g.fillRect (b.getX() + b.getWidth() * en, b.getY(), b.getWidth() * (1.0f - en), b.getHeight());
         if (loopOn) { g.setColour (gold.withAlpha (0.12f)); g.fillRect (b.getX() + b.getWidth() * la, b.getY(), b.getWidth() * (lb - la), b.getHeight()); line (la, gold); line (lb, gold); }
-        if (val ("chop_on") > 0.5f)
+        if (slot == 0 && val ("chop_on") > 0.5f)
         {
             double sb[18]; const int cnt = proc.chopSlices (*s, proc.getHostBpm(), sb);
             for (int i = 0; i < cnt; ++i)
@@ -594,30 +601,42 @@ public:
             }
         }
         line (st, juce::Colour (0xffe8e0b0));
+        if (en < 0.999f) line (en, juce::Colour (0xffff9a7a));
         g.setColour (lime.withAlpha (0.9f));
-        const int root = (int) val ("sample_root");
-        drawText (g, "SLOT A  " + juce::String (s->rate / 1000.0, 1) + "k   ROOT " + juce::MidiMessage::getMidiNoteName (root, true, true, 3) + "    " + s->name.toUpperCase(),
+        const int root = (int) val (id (5)); const bool follows = slot == 1 && val ("sampleb_indep") < 0.5f;
+        drawText (g, juce::String (slot == 0 ? "SLOT A  " : "SLOT B  ") + juce::String (s->rate / 1000.0, 1) + "k   ROOT " + juce::MidiMessage::getMidiNoteName (root, true, true, 3) + "    " + s->name.toUpperCase() + (follows ? "    (FOLLOWS A: TURN ON B LAYER)" : ""),
                   juce::Rectangle<int> (14, 6, getWidth() - 28, (int) (H * 0.1f)), H * 0.07f, juce::Justification::left);
     }
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (proc.getSample() == nullptr) return;
+        if ((slot == 0 ? proc.getSample() : proc.getSampleB()) == nullptr) return;
         const float x01 = juce::jlimit (0.0f, 1.0f, (e.position.x - 16.0f) / (float) (getWidth() - 32));
-        const char* ids[3] = { "sample_start", "loop_start", "loop_end" }; float best = 0.04f; drag = nullptr;
-        for (int i = 0; i < 3; ++i) { if (i > 0 && val ("sample_loop") < 0.5f) continue; const float d = std::abs (val (ids[i]) - x01); if (d < best) { best = d; drag = proc.apvts.getParameter (ids[i]); } }
+        float best = 0.04f; drag = nullptr;
+        for (int i = 0; i < 4; ++i)       // Start, End, Loop in, Loop out; the loop markers only count while looping
+        { if (i >= 2 && val (id (4)) < 0.5f) continue; const float d = std::abs (val (id (i)) - x01); if (d < best) { best = d; drag = proc.apvts.getParameter (id (i)); } }
         if (drag) { drag->beginChangeGesture(); mouseDrag (e); }
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (! drag) return;
         float v = juce::jlimit (0.0f, 1.0f, (e.position.x - 16.0f) / (float) (getWidth() - 32));
-        if (drag->paramID == "loop_start") v = std::min (v, val ("loop_end") - 0.01f);
-        if (drag->paramID == "loop_end") v = std::max (v, val ("loop_start") + 0.01f);
-        drag->setValueNotifyingHost (drag->convertTo0to1 (v));
+        const auto pid = drag->paramID;
+        if (pid == id (0)) v = std::min (v, val (id (1)) - 0.01f);
+        if (pid == id (1)) v = std::max (v, val (id (0)) + 0.01f);
+        if (pid == id (2)) v = std::min (v, val (id (3)) - 0.01f);
+        if (pid == id (3)) v = std::max (v, val (id (2)) + 0.01f);
+        drag->setValueNotifyingHost (drag->convertTo0to1 (juce::jlimit (0.0f, 1.0f, v)));
     }
     void mouseUp (const juce::MouseEvent&) override { if (drag) { drag->endChangeGesture(); drag = nullptr; } }
 private:
-    juce::RangedAudioParameter* drag = nullptr;
+    // parameter ids of the slot being shown: 0 start, 1 end, 2 loop in, 3 loop out, 4 loop on, 5 root
+    const char* id (int k) const
+    {
+        static const char* a[6] = { "sample_start", "sample_end", "loop_start", "loop_end", "sample_loop", "sample_root" };
+        static const char* b[6] = { "sampleb_start", "sampleb_end", "sampleb_loop_start", "sampleb_loop_end", "sampleb_loop", "sampleb_root" };
+        return (slot == 0 ? a : b)[k];
+    }
+    juce::RangedAudioParameter* drag = nullptr; int slot = 0;
 };
 
 // SAMPLE <-> Synth crossfader.
@@ -1047,6 +1066,12 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     ui::Knob* addKnobCopy (const char* id, const char* name);
     std::vector<ui::Knob*> sampKnobs;
+    // SAMPLER tab: which sample slot is being edited and what is shown for it
+    int sampSlot = 0;                                                    // 0 = slot A, 1 = slot B
+    std::unique_ptr<ui::StoneButton> slotBtn[2];
+    std::vector<juce::Component*> sampSetA, sampSetB, sampEnvVoice, sampEnvA, sampEnvB;
+    std::vector<ui::Knob*> sampKnobsA, sampKnobsB, envKnobsVoice, envKnobsA, envKnobsB;
+    void updateSamplerView();
 
     // OSC tab
     std::unique_ptr<ui::WaveDisplay> wave; std::unique_ptr<ui::EnvDisplay> env; std::unique_ptr<ui::Meter> meter;

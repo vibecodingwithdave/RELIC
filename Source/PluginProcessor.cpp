@@ -1079,7 +1079,7 @@ uint64_t RelicProcessor::displayStateKey() const
     auto mix = [&h] (uint64_t v) { h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2); };
     for (auto* prm : getParameters()) { const float v = prm->getValue(); uint32_t bits = 0; std::memcpy (&bits, &v, sizeof (bits)); mix (bits); }
     mix ((uint64_t) (arpStepShown.load() + 2)); mix ((uint64_t) (chordDegreeShown.load() + 2)); mix (arpWaitingShown.load() ? 1u : 0u);
-    mix ((uint64_t) (hostBpm * 10.0)); mix ((uint64_t) (uintptr_t) getSample().get());
+    mix ((uint64_t) (hostBpm * 10.0)); mix ((uint64_t) (uintptr_t) getSample().get()); mix ((uint64_t) (uintptr_t) getSampleB().get());
     return h;
 }
 
