@@ -24,6 +24,7 @@ inline const Table& params()
 {
     static const Table t = {
         // oscillator, envelope, master
+        { "wt_use_file", "Wavetable oscillators play the loaded wavetable file instead of the built-in bank. Width sweeps through the file's frames. Off: the built-in bank." },
         { "waveform", "The main oscillator's waveform. The arrows on either side step through them." },
         { "pulse_width", "Pulse width of the square wave, from narrow to wide. You only hear it on the square waveform." },
         { "osc_level", "Level of the main oscillator." },
@@ -309,6 +310,10 @@ inline const Table& names()
         { "EFFECTS B", "Switches between two complete sets of effect settings, A and B." },
         { "POLY", "Switches between playing one note at a time and eight notes at once." },
         { "wave_prev", "Previous waveform." },
+        { "wt_prev", "Loads the previous wavetable file in the loaded file's folder." },
+        { "wt_next", "Loads the next wavetable file in the loaded file's folder." },
+        { "wt_name", "The loaded wavetable. Click for the list of wavetable files in its folder (or the Relic wavetable folder), to open that folder, or to go back to the built-in wavetable." },
+        { "LOAD WAVETABLE", "Loads a wavetable from any folder: a WAV, AIFF or FLAC of single-cycle frames end to end (2048 samples each is usual; a file that is a single cycle works too). It is band-limited per note, so it will not alias. Up to 256 frames are used. The file stays where it is; a project remembers its path." },
         { "wave_next", "Next waveform." },
         { "LP", "Low-pass: lets the low frequencies through and turns the highs down." },
         { "HP", "High-pass: lets the high frequencies through and turns the lows down." },

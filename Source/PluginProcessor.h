@@ -77,6 +77,16 @@ public:
     void clearTexture();
     void clearSample();
     std::shared_ptr<const SampleData> getSample() const { const juce::SpinLock::ScopedLockType l (sampleLock); return sample; }
+    // ---- external wavetable (used by every oscillator set to Wavetable while "wt_use_file" is on) ----
+    static juce::File wavetablesRoot();                                   // the user's wavetable folder: loading starts here
+    bool loadWavetableFile (const juce::File& f);                         // message thread; false (and sampleError set) when the file is unusable
+    void clearWavetable();
+    juce::File getWavetableFile() const { return juce::File (apvts.state.getProperty ("wavetablePath").toString()); }
+    juce::String getWavetableName() const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser != nullptr ? juce::String (wtUser->name) : juce::String(); }
+    std::shared_ptr<const rf::WaveTables::UserBank> getWavetableBank() const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser; }
+    int getWavetableFrames() const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser != nullptr ? wtUser->frames : 0; }
+    static std::vector<juce::File> scanWavetables (const juce::File& folder);   // every wav / aiff / flac under the folder, in natural order
+    bool stepWavetable (int dir);                                         // loads the next / previous file in the loaded file's folder
     juce::String sampleError;
     std::atomic<int> arpStepShown { -1 }, chordDegreeShown { -1 };      // for the displays
     std::atomic<bool> arpWaitingShown { true };
@@ -137,6 +147,11 @@ private:
     std::shared_ptr<const SampleData> sample, audioSample;   // audioSample is the audio thread's copy
     std::shared_ptr<const SampleData> sampleB, audioSampleB;  // slot B (A/B morph)
     std::shared_ptr<const SampleData> sampleT, audioSampleT;  // the texture's own file (used when "tex_indep" is on)
+    struct WtRaw { std::vector<float> data; int frameLen = 0; std::string name; };
+    std::shared_ptr<const WtRaw> wtRaw;                                   // the file's samples, kept so a sample-rate change can rebuild the bank
+    std::shared_ptr<const rf::WaveTables::UserBank> wtUser, audioWt;      // audioWt is the audio thread's copy
+    const rf::WaveTables::UserBank* curWt = nullptr;                      // the bank this block plays (null: built-in)
+    void rebuildWavetable();
     rf::WaveTables tables;
     rf::Tremolo trem; rf::Panner panner; rf::PingPongDelay delay; rf::Compressor comp; rf::Crusher crush; rf::Chorus chorus; rf::Flanger flanger; rf::Reverb reverb;
     rf::Equalizer eq; rf::Tape tape; rf::Widener widener; rf::Wah wah; rf::LoFi lofi; rf::Ott ott; rf::PitchDelay pdelay; rf::TalkBox talk; rf::SpectralGate sgate; std::vector<int> leadHeld;

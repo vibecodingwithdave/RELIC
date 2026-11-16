@@ -179,6 +179,17 @@ RelicEditor::RelicEditor (RelicProcessor& p)
         { "unison_detune", "Detune" }, { "unison_spread", "Spread" }, { "voices", "Poly" },
         { "attack_ms", "Attack" }, { "decay_ms", "Decay" }, { "sustain", "Sustain" }, { "release_ms", "Release" } };
     for (auto& k : oscKnobs) oscGroup.push_back (addKnob (k.first, k.second));
+    // wavetable file strip: FILE switches the Wavetable oscillators between the built-in bank and the loaded file; the arrows step through the file's folder
+    oscGroup.push_back (addNoteToggle ("wt_use_file", "FILE", 0.4f));
+    wtPrev = std::make_unique<ui::StoneButton> ("<", true, false); wtNext = std::make_unique<ui::StoneButton> (">", true, false);
+    wtName = std::make_unique<ui::StoneButton> ("LOAD A WAVETABLE...", true, false); wtLoad = std::make_unique<ui::StoneButton> ("LOAD FILE", true, false);
+    wtName->textScale = 0.3f; wtLoad->textScale = 0.3f;
+    wtPrev->onClick = [this] { if (proc.stepWavetable (-1)) afterWavetableLoaded(); else repaint(); };
+    wtNext->onClick = [this] { if (proc.stepWavetable (+1)) afterWavetableLoaded(); else repaint(); };
+    wtName->onClick = [this] { showWavetableMenu(); };
+    wtLoad->onClick = [this] { loadWavetableDialog(); };
+    for (auto* b : { wtPrev.get(), wtNext.get(), wtName.get(), wtLoad.get() }) { addAndMakeVisible (b); oscGroup.push_back (b); }
+    wtPrev->setTooltip (help::forName ("wt_prev")); wtNext->setTooltip (help::forName ("wt_next")); wtName->setTooltip (help::forName ("wt_name")); wtLoad->setTooltip (help::forName ("LOAD WAVETABLE"));
 
     // ---- CHORDS and ARP tabs ----
     chordDisp = std::make_unique<ui::ChordDisplay> (proc); addAndMakeVisible (*chordDisp); chordGroup.push_back (chordDisp.get());
@@ -640,6 +651,7 @@ void RelicEditor::timerCallback()
     proc.historyTick(); undoBtn->setEnabled (proc.canUndo()); redoBtn->setEnabled (proc.canRedo()); lockFxBtn->setToggleState (proc.lockFx.load(), juce::dontSendNotification);
     if (proc.getPresetName() != lastPresetName) { lastPresetName = proc.getPresetName(); repaint (R (600, 690, 590, 52)); }
     if (auto* c = choiceParam (proc.apvts, "waveform")) waveName->setButtonText (c->getCurrentChoiceName().toUpperCase());
+    {   const auto wn = proc.getWavetableName(); if (wn != lastWtName) { lastWtName = wn; wtName->setButtonText (wn.isEmpty() ? juce::String ("LOAD A WAVETABLE...") : wn.toUpperCase().substring (0, 30)); wave->repaint(); } }
     const int ftIdx = (int) proc.apvts.getRawParameterValue ("filter_type")->load();
     for (int i = 0; i < 4; ++i) ftype[i]->setToggleState (i == ftIdx, juce::dontSendNotification);
     polyBtn->setToggleState (proc.apvts.getRawParameterValue ("voices")->load() > 1.5f, juce::dontSendNotification);
@@ -781,7 +793,8 @@ void RelicEditor::resized()
     for (int i = 0; i < 11; ++i) tabs[i]->setBounds (R (548 + i * 66.0f, 102, 62, 44));
 
     // OSC tab
-    wave->setBounds (R (548, 156, 724, 232)); env->setBounds (R (548, 394, 360, 82)); meter->setBounds (R (1176, 490, 92, 150));
+    wave->setBounds (R (548, 156, 724, 190));
+    noteToggles["wt_use_file"]->setBounds (R (548, 350, 110, 38)); wtPrev->setBounds (R (664, 350, 40, 38)); wtName->setBounds (R (708, 350, 330, 38)); wtNext->setBounds (R (1042, 350, 40, 38)); wtLoad->setBounds (R (1086, 350, 186, 38)); env->setBounds (R (548, 394, 360, 82)); meter->setBounds (R (1176, 490, 92, 150));
     const char* oscIds[6] = { "pulse_width", "osc_level", "unison_voices", "unison_detune", "unison_spread", "voices" };
     for (int i = 0; i < 6; ++i) K (oscIds[i])->setBounds (R (928 + (i % 3) * 82.0f, 396 + (i / 3) * 124.0f, 76, 118));
     const char* adsr[4] = { "attack_ms", "decay_ms", "sustain", "release_ms" };
@@ -962,4 +975,38 @@ void RelicEditor::resized()
     keyboard.setBounds (R (636, 832, 570, 118));
     keyboard.setKeyWidth ((float) keyboard.getWidth() / 21.0f);
     (void) kw;
+}
+
+// ---- wavetable file strip ----
+void RelicEditor::afterWavetableLoaded()
+{
+    if (auto* q = proc.apvts.getParameter ("wt_use_file")) q->setValueNotifyingHost (1.0f);          // hear it straight away
+    if (auto* w = choiceParam (proc.apvts, "waveform")) if (w->getIndex() != 4) w->setValueNotifyingHost (w->convertTo0to1 (4.0f));   // and make the oscillator a Wavetable
+    repaint();
+}
+
+void RelicEditor::loadWavetableDialog()
+{
+    auto start = proc.getWavetableFile(); start = start.existsAsFile() ? start.getParentDirectory() : RelicProcessor::wavetablesRoot();
+    RelicProcessor::wavetablesRoot().createDirectory();
+    chooser = std::make_unique<juce::FileChooser> ("Choose a wavetable (single-cycle frames end to end, 2048 samples each)", start, "*.wav;*.aif;*.aiff;*.flac");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
+    { auto f = fc.getResult(); if (f.existsAsFile() && proc.loadWavetableFile (f)) afterWavetableLoaded(); else repaint(); });
+}
+
+void RelicEditor::showWavetableMenu()
+{
+    const auto cur = proc.getWavetableFile();
+    const auto dir = cur.existsAsFile() ? cur.getParentDirectory() : RelicProcessor::wavetablesRoot();
+    const auto files = RelicProcessor::scanWavetables (dir);
+    juce::PopupMenu m; m.addSectionHeader ("WAVETABLES  (" + dir.getFullPathName() + ")");
+    if (files.empty()) m.addItem (1, "No wavetable files here: LOAD FILE finds one anywhere", false);
+    for (size_t i = 0; i < files.size() && i < 400; ++i) m.addItem (1000 + (int) i, files[i].getRelativePathFrom (dir).replaceCharacter ('\\', '/'), true, files[i] == cur);
+    m.addSeparator(); m.addItem (2, "Open the folder"); m.addItem (3, "Use the built-in wavetable", cur.existsAsFile());
+    m.showMenuAsync (juce::PopupMenu::Options(), [this, files, dir] (int r)
+    {
+        if (r == 2) { dir.createDirectory(); dir.revealToUser(); }
+        else if (r == 3) { proc.clearWavetable(); if (auto* q = proc.apvts.getParameter ("wt_use_file")) q->setValueNotifyingHost (0.0f); repaint(); }
+        else if (r >= 1000 && r - 1000 < (int) files.size() && proc.loadWavetableFile (files[(size_t) (r - 1000)])) afterWavetableLoaded();
+    });
 }

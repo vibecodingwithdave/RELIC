@@ -280,6 +280,7 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     }
     integer ("arp_pat_length", "Arp Pattern Length", 1, 64, 16);
     for (int i = 1; i <= 64; ++i) integer ("arp_pat_" + juce::String (i), "Arp Pattern Step " + juce::String (i), -12, 12, (i - 1) % 8);   // Custom mode: note number of each step
+    toggle ("wt_use_file", "Wavetable From File", false);   // on: oscillators set to Wavetable play the loaded file instead of the built-in bank
     // Master
     flt ("master", "Master", 0.0f, 2.0f, 0.8f);
     return { v.begin(), v.end() };
@@ -357,6 +358,72 @@ void RelicProcessor::clearTexture()
 {
     { const juce::SpinLock::ScopedLockType l (sampleLock); sampleT.reset(); }
     apvts.state.removeProperty ("samplePathT", nullptr);
+}
+
+// ---- external wavetables ----
+juce::File RelicProcessor::wavetablesRoot()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Relic").getChildFile ("Wavetables");
+}
+
+void RelicProcessor::rebuildWavetable()
+{
+    std::shared_ptr<const WtRaw> raw; { const juce::SpinLock::ScopedLockType l (sampleLock); raw = wtRaw; }
+    if (raw == nullptr) return;
+    auto bank = rf::WaveTables::buildUser (raw->data, raw->frameLen, sr, raw->name);
+    const juce::SpinLock::ScopedLockType l (sampleLock); wtUser = bank;
+}
+
+bool RelicProcessor::loadWavetableFile (const juce::File& f)
+{
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+    if (r == nullptr || r->lengthInSamples < 2) { sampleError = "Couldn't read that wavetable"; return false; }
+    if (r->lengthInSamples > (1 << 24)) { sampleError = "That wavetable file is too long (over 16 million samples)"; return false; }
+    const int n = (int) r->lengthInSamples;
+    juce::AudioBuffer<float> buf (juce::jmax (1, (int) r->numChannels), n);
+    r->read (&buf, 0, n, 0, true, true);
+    auto raw = std::make_shared<WtRaw>(); raw->data.assign ((size_t) n, 0.0f);
+    for (int ch = 0; ch < buf.getNumChannels(); ++ch) { const float* p = buf.getReadPointer (ch); for (int i = 0; i < n; ++i) raw->data[(size_t) i] += p[i] / (float) buf.getNumChannels(); }
+    int hint = 0;
+    if (f.hasFileExtension ("wav")) { juce::MemoryBlock mb; if (f.loadFileAsData (mb) && mb.getSize() > 0) hint = rf::WaveTables::parseFrameLenHint ((const unsigned char*) mb.getData(), mb.getSize()); }
+    raw->frameLen = rf::WaveTables::detectFrameLen ((size_t) n, hint); raw->name = f.getFileNameWithoutExtension().toStdString();
+    auto bank = rf::WaveTables::buildUser (raw->data, raw->frameLen, sr, raw->name);
+    if (bank == nullptr) { sampleError = "That file has no usable wavetable frames"; return false; }
+    { const juce::SpinLock::ScopedLockType l (sampleLock); wtRaw = raw; wtUser = bank; }
+    sampleError = {}; apvts.state.setProperty ("wavetablePath", f.getFullPathName(), nullptr); return true;
+}
+
+void RelicProcessor::clearWavetable()
+{
+    { const juce::SpinLock::ScopedLockType l (sampleLock); wtRaw.reset(); wtUser.reset(); }
+    apvts.state.removeProperty ("wavetablePath", nullptr);
+}
+
+std::vector<juce::File> RelicProcessor::scanWavetables (const juce::File& folder)
+{
+    std::vector<juce::File> out;
+    if (! folder.isDirectory()) return out;
+    for (const auto& e : juce::RangedDirectoryIterator (folder, true, "*.wav;*.aif;*.aiff;*.flac", juce::File::findFiles))
+        if (! e.getFile().getFileName().startsWith (".")) out.push_back (e.getFile());
+    std::sort (out.begin(), out.end(), [] (const juce::File& a, const juce::File& b) { return a.getFullPathName().compareNatural (b.getFullPathName()) < 0; });
+    return out;
+}
+
+bool RelicProcessor::stepWavetable (int dir)
+{
+    const auto cur = getWavetableFile();
+    const auto files = scanWavetables (cur.existsAsFile() ? cur.getParentDirectory() : wavetablesRoot());
+    if (files.empty()) { sampleError = "No wavetable files in that folder"; return false; }
+    int idx = -1; for (size_t i = 0; i < files.size(); ++i) if (files[i] == cur) { idx = (int) i; break; }
+    const int n = (int) files.size();
+    // try forward until one loads, so a file that cannot be read does not stop the stepping
+    for (int tries = 0; tries < n; ++tries)
+    {
+        idx = idx < 0 ? (dir > 0 ? 0 : n - 1) : ((idx + dir) % n + n) % n;
+        if (loadWavetableFile (files[(size_t) idx])) return true;
+    }
+    return false;
 }
 
 void RelicProcessor::clearSample()
@@ -450,6 +517,7 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
     else { clearSample(); if (samplePath.isNotEmpty()) sampleError = "Sample not found: " + sf.getFileName(); }
     { const auto pb = xml->getStringAttribute ("samplePathB"); juce::File fb (pb); if (pb.isNotEmpty() && fb.existsAsFile()) loadSampleFile (fb, false, true); else clearSampleB(); }
     { const auto pt = xml->getStringAttribute ("samplePathT"); juce::File ft (pt); if (pt.isNotEmpty() && ft.existsAsFile()) loadTextureFile (ft); else clearTexture(); }
+    { const auto pw = xml->getStringAttribute ("wavetablePath"); juce::File fw (pw); if (pw.isNotEmpty() && fw.existsAsFile()) loadWavetableFile (fw); else { clearWavetable(); if (pw.isNotEmpty()) sampleError = "Wavetable not found: " + fw.getFileName(); } }
     apvts.state.setProperty ("presetName", xml->getStringAttribute ("presetName", f.getFileNameWithoutExtension()), nullptr);
     apvts.state.setProperty ("presetCategory", xml->getStringAttribute ("category"), nullptr);
     apvts.state.setProperty ("presetBank", f.getParentDirectory().getRelativePathFrom (presetsRoot()).replaceCharacter ('\\', '/'), nullptr);
@@ -458,7 +526,7 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
 
 void RelicProcessor::initPreset()
 {
-    resetAllParameters (*this); clearSample(); clearSampleB(); clearTexture(); sampleError = {};
+    resetAllParameters (*this); clearSample(); clearSampleB(); clearTexture(); clearWavetable(); sampleError = {};
     apvts.state.setProperty ("presetName", "Init", nullptr); apvts.state.setProperty ("presetBank", "", nullptr); apvts.state.setProperty ("presetCategory", "", nullptr);
 }
 
@@ -501,6 +569,7 @@ void RelicProcessor::prepareToPlay (double sampleRate, int)
 {
     sr = sampleRate;
     tables.prepare (sr);
+    rebuildWavetable();
     delay.prepare (sr); chorus.prepare (sr); flanger.prepare (sr); reverb.prepare (sr);
     pdelay.prepare (sr); talk.prepare (sr); sgate.prepare (sr); eq.prepare (sr); tape.prepare (sr); wah.prepare (sr); lofi.prepare (sr); ott.prepare (sr); leadHeld.reserve (64);
     for (auto& vo : voices) vo = Voice();
@@ -513,7 +582,7 @@ float RelicProcessor::oscSample (int shape, double phase, double hz, float pw) c
     switch (shape)
     {
         case 0: return (float) std::sin (2.0 * rf::kPi * phase);
-        case 4: return tables.lookupMorph ((pw - 0.05) / 0.9, band, phase);
+        case 4: return curWt != nullptr ? tables.lookupUserMorph (*curWt, (pw - 0.05) / 0.9, band, phase) : tables.lookupMorph ((pw - 0.05) / 0.9, band, phase);
         case 1: return tables.lookup (rf::WaveTables::Saw, band, phase) * 0.847f;
         case 2:
         {
@@ -1042,7 +1111,8 @@ static inline float safe (float x)
 void RelicProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
-    { const juce::SpinLock::ScopedTryLockType l (sampleLock); if (l.isLocked()) { audioSample = sample; audioSampleB = sampleB; audioSampleT = sampleT; } }
+    { const juce::SpinLock::ScopedTryLockType l (sampleLock); if (l.isLocked()) { audioSample = sample; audioSampleB = sampleB; audioSampleT = sampleT; audioWt = wtUser; } }
+    curWt = (audioWt != nullptr && apvts.getRawParameterValue ("wt_use_file")->load() > 0.5f) ? audioWt.get() : nullptr;
     const int N = buffer.getNumSamples();
     buffer.clear();
     float* L = buffer.getWritePointer (0);
@@ -1158,6 +1228,9 @@ void RelicProcessor::setStateInformation (const void* data, int size)
             if (pathB.isNotEmpty()) { juce::File f (pathB); if (f.existsAsFile()) loadSampleFile (f, false, true); }
             const auto pathT = apvts.state.getProperty ("samplePathT").toString();
             if (pathT.isNotEmpty()) { juce::File f (pathT); if (f.existsAsFile()) loadTextureFile (f); }
+            const auto pathW = apvts.state.getProperty ("wavetablePath").toString();
+            if (pathW.isNotEmpty()) { juce::File f (pathW); if (f.existsAsFile()) loadWavetableFile (f); else { clearWavetable(); sampleError = "Wavetable not found: " + f.getFileName(); } }
+            else clearWavetable();
         }
 }
 

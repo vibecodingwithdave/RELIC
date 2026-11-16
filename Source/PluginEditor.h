@@ -386,6 +386,7 @@ public:
     {
         paintFrame (g);
         const int shape = (int) val ("waveform"); const float pw = val ("pulse_width");
+        const auto user = (shape == 4 && val ("wt_use_file") > 0.5f) ? proc.getWavetableBank() : nullptr;
         auto b = getLocalBounds().toFloat().reduced (14.0f, 20.0f);
         juce::Path p; const int n = 400; const float cycles = 3.0f;
         for (int i = 0; i <= n; ++i)
@@ -394,6 +395,11 @@ public:
             if (shape == 0) v = std::sin (ph * juce::MathConstants<float>::twoPi);
             else if (shape == 1) v = 1.0f - 2.0f * ph;
             else if (shape == 2) v = ph < pw ? 1.0f : -1.0f;
+            else if (shape == 4 && user != nullptr)      // a loaded wavetable file: the frames morphed at the Width position
+            {
+                static const rf::WaveTables lookupOnly;
+                v = lookupOnly.lookupUserMorph (*user, juce::jlimit (0.0, 1.0, (double) (pw - 0.05f) / 0.9), 3, (double) ph) * 0.9f;
+            }
             else if (shape == 4)       // wavetable: the bank morphed at the Width position, summed from its harmonics
             {
                 const double pos = juce::jlimit (0.0, 1.0, (double) (pw - 0.05f) / 0.9) * (rf::WaveTables::WtCount - 1); const int t0 = std::min (rf::WaveTables::WtCount - 2, (int) pos); const double fr = pos - t0;
@@ -409,7 +415,7 @@ public:
         g.setColour (lime); g.strokePath (p, juce::PathStrokeType (2.5f));
         g.setColour (lime.withAlpha (0.85f));
         static const char* names[] = { "SINE", "SAW", "SQUARE", "TRIANGLE", "WAVETABLE", "PLUCK", "BELL" };
-        drawText (g, juce::String ("OSC  ") + names[shape] + "   UNISON " + juce::String ((int) val ("unison_voices")), juce::Rectangle<int> (14, 6, getWidth() - 28, (int) (getHeight() * 0.1f)), getHeight() * 0.07f, juce::Justification::left);
+        drawText (g, juce::String ("OSC  ") + (user != nullptr ? juce::String ("WAVETABLE  ") + juce::String (user->name).toUpperCase().substring (0, 28) + "  " + juce::String (user->frames) + (user->frames == 1 ? " FRAME" : " FRAMES") : juce::String (names[shape])) + "   UNISON " + juce::String ((int) val ("unison_voices")), juce::Rectangle<int> (14, 6, getWidth() - 28, (int) (getHeight() * 0.1f)), getHeight() * 0.07f, juce::Justification::left);
     }
 };
 
@@ -1186,7 +1192,7 @@ private:
 
     // presets
     std::unique_ptr<ui::PresetBrowser> browser; std::unique_ptr<ui::StoneButton> saveBtn, prevPreset, nextPreset; std::unique_ptr<ui::ClickArea> barClick;
-    juce::String lastPresetName;
+    juce::String lastPresetName, lastWtName;
     void doSave(); void stepPreset (int delta); void showBrowser (bool show);
 
     // SAMPLER tab
@@ -1226,6 +1232,8 @@ private:
     struct Pad { std::unique_ptr<ui::StoneButton> btn; std::unique_ptr<juce::ButtonParameterAttachment> att; const char* id; };
     std::vector<Pad> pads;
     std::unique_ptr<ui::StoneButton> waveLeft, waveRight, waveName, polyBtn, allOn, bypassFx;
+    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad;      // wavetable file strip on the OSC tab
+    void showWavetableMenu(); void loadWavetableDialog(); void afterWavetableLoaded();
     juce::Label waveLabel;
 
     // FX tab controls
