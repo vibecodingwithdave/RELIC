@@ -73,6 +73,10 @@ struct TalkBox
         for (int c = 0; c < 2; ++c) for (int k = 0; k < 3; ++k) o[c] += f[c][k].process (in[c], Svf::BandPass) * W[k];
         l = l * (1.0f - mix) + o[0] * 2.4f * mix; r = r * (1.0f - mix) + o[1] * 2.4f * mix;
     }
+    float lfoPhase() const { return ph; }
+    // Lines the vowel LFO up with the host (see barLockedPhase): the phase it will have at the next update, which comes (16 - n % 16) % 16 samples into the block
+    void lockPhase (double barPhaseAtBlockStart, double hz, double sr)
+    { const double k = (double) ((16 - (n & 15)) & 15), at = barPhaseAtBlockStart + hz * k / sr, step = hz * 16.0 / sr; double p = at - step; p -= std::floor (p); ph = (float) p; }
 private:
     Svf f[2][3]; int n = 0; float ph = 0.0f;
 };

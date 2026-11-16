@@ -83,16 +83,18 @@ public:
     void clearTexture();
     void clearSample();
     std::shared_ptr<const SampleData> getSample() const { const juce::SpinLock::ScopedLockType l (sampleLock); return sample; }
-    // ---- external wavetable (used by every oscillator set to Wavetable while "wt_use_file" is on) ----
+    // ---- external wavetables: each of the three oscillators can have its own file (osc 0 = the main one, 1 and 2 = OSC 2 and 3); it plays while that oscillator's FILE switch is on ----
     static juce::File wavetablesRoot();                                   // the user's wavetable folder: loading starts here
-    bool loadWavetableFile (const juce::File& f);                         // message thread; false (and sampleError set) when the file is unusable
-    void clearWavetable();
-    juce::File getWavetableFile() const { return juce::File (apvts.state.getProperty ("wavetablePath").toString()); }
-    juce::String getWavetableName() const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser != nullptr ? juce::String (wtUser->name) : juce::String(); }
-    std::shared_ptr<const rf::WaveTables::UserBank> getWavetableBank() const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser; }
-    int getWavetableFrames() const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser != nullptr ? wtUser->frames : 0; }
+    bool loadWavetableFile (const juce::File& f, int osc = 0);            // message thread; false (and sampleError set) when the file is unusable
+    void clearWavetable (int osc = 0);
+    static const char* wtPathKey (int osc) { static const char* k[3] = { "wavetablePath", "wavetablePath2", "wavetablePath3" }; return k[juce::jlimit (0, 2, osc)]; }
+    static const char* wtToggleId (int osc) { static const char* k[3] = { "wt_use_file", "osc2_wt_file", "osc3_wt_file" }; return k[juce::jlimit (0, 2, osc)]; }
+    juce::File getWavetableFile (int osc = 0) const { return juce::File (apvts.state.getProperty (wtPathKey (osc)).toString()); }
+    juce::String getWavetableName (int osc = 0) const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser[osc] != nullptr ? juce::String (wtUser[osc]->name) : juce::String(); }
+    std::shared_ptr<const rf::WaveTables::UserBank> getWavetableBank (int osc = 0) const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser[osc]; }
+    int getWavetableFrames (int osc = 0) const { const juce::SpinLock::ScopedLockType l (sampleLock); return wtUser[osc] != nullptr ? wtUser[osc]->frames : 0; }
     static std::vector<juce::File> scanWavetables (const juce::File& folder);   // every wav / aiff / flac under the folder, in natural order
-    bool stepWavetable (int dir);                                         // loads the next / previous file in the loaded file's folder
+    bool stepWavetable (int dir, int osc = 0);                            // loads the next / previous file in the loaded file's folder
     juce::String sampleError;
     std::atomic<int> arpStepShown { -1 }, chordDegreeShown { -1 };      // for the displays
     std::atomic<bool> arpWaitingShown { true };
@@ -138,7 +140,7 @@ private:
         float ks[8192] {}; int ksPos = 0; float ksLp = 0.0f;                    // plucked-string model
         float bellAmp[6] {}; unsigned int nseed = 1;                            // bell model
         int zone = 0;                                                           // keyboard split: 0 none, 1 sample only, 2 synth only
-        bool chop = false; double sliceA = 0.0, sliceB = 0.0; int choke = 0; bool chopRev = false; double chopRateMul = 1.0; float chopMul = 1.0f;   // kit settings of the pad this voice plays
+        bool chop = false; double sliceA = 0.0, sliceB = 0.0; int choke = 0; bool choked = false; float chokeGain = 1.0f; bool chopRev = false; double chopRateMul = 1.0; float chopMul = 1.0f;   // kit settings of the pad this voice plays
           // chop voice: slice bounds in frames
         rf::Adsr env, menv[2];                           // amp envelope; two modulation envelopes
         rf::Adsr envA, envB, envT;                       // optional own envelopes of sample layers A and B and of the texture
@@ -156,9 +158,10 @@ private:
     std::shared_ptr<const SampleData> sampleB, audioSampleB;  // slot B (A/B morph)
     std::shared_ptr<const SampleData> sampleT, audioSampleT;  // the texture's own file (used when "tex_indep" is on)
     struct WtRaw { std::vector<float> data; int frameLen = 0; std::string name; };
-    std::shared_ptr<const WtRaw> wtRaw;                                   // the file's samples, kept so a sample-rate change can rebuild the bank
-    std::shared_ptr<const rf::WaveTables::UserBank> wtUser, audioWt;      // audioWt is the audio thread's copy
-    const rf::WaveTables::UserBank* curWt = nullptr;                      // the bank this block plays (null: built-in)
+    std::shared_ptr<const WtRaw> wtRaw[3];                                // each file's samples, kept so a sample-rate change can rebuild the bank
+    std::shared_ptr<const rf::WaveTables::UserBank> wtUser[3], audioWt[3];   // audioWt is the audio thread's copy
+    const rf::WaveTables::UserBank* curWt[3] = { nullptr, nullptr, nullptr };   // the bank each oscillator plays this block (null: built-in)
+    bool wtSmooth = false;                                                // blocks: morph across frames with a cubic blend instead of a linear one
     void rebuildWavetable();
     rf::WaveTables tables;
     rf::Tremolo trem; rf::Panner panner; rf::PingPongDelay delay; rf::Compressor comp; rf::Crusher crush; rf::Chorus chorus; rf::Flanger flanger; rf::Reverb reverb;
@@ -175,7 +178,7 @@ private:
     // (forward: Start to the last frame, reverse: last frame back to the beginning, Start ignored), so existing presets render as before.
     struct SampleRegion { double startRaw = 0.0, startF = 0.0, endF = 0.0, revFloor = 0.0; bool trimmed = false; };
     SampleRegion sampleRegion (double nF, const char* startId, const char* endId) const;
-    float oscSample (int shape, double phase, double hz, float pw) const;
+    float oscSample (int shape, double phase, double hz, float pw, const rf::WaveTables::UserBank* wt) const;
 
     std::vector<float> fxSlot[2]; int fxActive = 0;
     using Snap = std::vector<float>;

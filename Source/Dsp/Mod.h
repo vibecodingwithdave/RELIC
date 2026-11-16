@@ -52,4 +52,21 @@ inline double syncedMs (int idx, double bpm, double freeMs)
     const double ms = b * 60000.0 / std::max (20.0, bpm); return ms < 1.0 ? 1.0 : (ms > 2000.0 ? 2000.0 : ms);
 }
 
+// Bar lock: the LFO phase (0..1, as the effects keep it just before their next step) that makes a cycle of `beats` beats line up with the host's position
+// in quarter notes (ppq) at the first sample of a block. Zero ppq is the start of a cycle.
+inline double barLockedPhase (double ppq, double beats, double hz, double sr)
+{
+    const double x = ppq / beats; double ph = x - std::floor (x) - hz / sr; return ph - std::floor (ph);
+}
+
+// A drawn modulation curve: kCurvePts values (0..1) at equal steps of the source's size (0 to 1, the sign is kept by the caller), joined smoothly (Catmull-Rom) and held within 0..1.
+constexpr int kCurvePts = 9;
+inline float curveEval (const float* pts, float x)
+{
+    x = x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x); const float t = x * (float) (kCurvePts - 1); int i = (int) t; if (i > kCurvePts - 2) i = kCurvePts - 2; const float f = t - (float) i;
+    const float y0 = i > 0 ? pts[i - 1] : 2.0f * pts[0] - pts[1], y1 = pts[i], y2 = pts[i + 1], y3 = i + 2 < kCurvePts ? pts[i + 2] : 2.0f * pts[kCurvePts - 1] - pts[kCurvePts - 2];       // the ends continue the line, so straight points stay straight
+    const float y = y1 + 0.5f * f * (y2 - y0 + f * (2.0f * y0 - 5.0f * y1 + 4.0f * y2 - y3 + f * (3.0f * (y1 - y2) + y3 - y0)));
+    return y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
+}
+
 } // namespace rf

@@ -51,3 +51,4 @@ Behaviour measurements of reference instruments are kept in a `private/` folder 
 - Sound: physical models beyond the string and bell, a stem splitter (needs a trained model), more matrix slots (the panel fits four), mid/side filter modes.
 - Content: a factory sample library, importer mapping for arp, chord and the newer effects.
 - Everything above is unheard in Logic: that check belongs to the owner.
+- Follow-ups done: choke 4 ms cut, slice marker snapping, talk-box sync and bar-locked effect LFOs, vibrato envelope (VIB ENVELOPE popup), per-oscillator wavetable files and smooth morph, drawn 9-point modulation curves. See README for details; the bar-lock path and all new layouts are unverified in a real host / by eye.

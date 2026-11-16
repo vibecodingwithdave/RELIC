@@ -32,9 +32,11 @@ junk = T / 'junk.wav'; junk.write_bytes(b'this is not audio at all'); junk = str
 
 BASE = dict(waveform=4, pulse_width=0.5, osc_level=0.8, unison_voices=1, synth_mix=1, filter_on=0, master=1.0, attack_ms=0.5, decay_ms=0, sustain=1, release_ms=20, voices=4,
             osc2_on=0, osc3_on=0, chord_on=0, arp_on=0, chop_on=0)
-def plugin(params=None, wt=None, drop=None, attrs=None):
+def plugin(params=None, wt=None, drop=None, attrs=None, wt2=None, wt3=None):
     P = load_plugin(PATH); a = dict(attrs or {}); 
     if wt: a['wavetablePath'] = wt
+    if wt2: a['wavetablePath2'] = wt2
+    if wt3: a['wavetablePath3'] = wt3
     P.raw_state = edit_state(P.raw_state, {**BASE, **(params or {})}, None, a or None, drop); P.reset(); return P
 def render(P, note=69, hold=1.2, dur=1.4, sr=SR):
     return P([(bytes([0x90, note, 127]), 0.0), (bytes([0x80, note, 0]), hold)], duration=dur, sample_rate=sr, num_channels=2).mean(axis=0)
@@ -77,7 +79,7 @@ check('a saw frame at low pitch keeps its bright harmonics (20th harmonic presen
 check('plays cleanly at 96 kHz and 48 kHz (right pitch)', all(amp(render(plugin(dict(wt_use_file=1), wt=sine1), sr=r), 440, sr=r) > 0.1 for r in (48000, 96000)))
 
 # other oscillators and file layouts
-y = render(plugin(dict(wt_use_file=1, pulse_width=0.95, waveform=0, osc_level=0.4, osc2_on=1, osc2_wave=4, osc2_level=1.0, osc2_oct=0, osc2_semi=0, osc2_fine=0), wt=two))
+y = render(plugin(dict(osc2_wt_file=1, pulse_width=0.95, waveform=0, osc_level=0.4, osc2_on=1, osc2_wave=4, osc2_level=1.0, osc2_oct=0, osc2_semi=0, osc2_fine=0), wt2=two))
 check('oscillator 2 set to Wavetable plays the loaded file too (main oscillator is a sine, so 1320 Hz can only come from oscillator 2)', amp(y, 1320) > 0.05 and amp(y, 440) > 0.05, f"{amp(y, 1320):.3f}")
 y = render(plugin(dict(wt_use_file=1, osc2_on=1, osc2_wave=1, osc2_level=0.0), wt=sine1))
 check('oscillators not set to Wavetable are untouched by the file (oscillator 2 saw at zero level changes nothing)', amp(y, 440) > 0.1)
@@ -90,5 +92,30 @@ for pw, h in ((0.05, 1), (0.95, 4)):
 a = render(plugin(), note=60); b = render(plugin(drop=['wt_use_file']), note=60)
 check('a project saved without the new setting sounds the same as the default', np.array_equal(a, b))
 check('the file setting alone changes nothing about the other waveforms', np.array_equal(render(plugin(dict(waveform=1)), note=60), render(plugin(dict(waveform=1, wavetable_from_file=1), wt=two), note=60)))
+
+# ---- one file per oscillator
+tri3 = write('third_harm.wav', cyc(2048, 3)); four = write('four_frames.wav', np.concatenate([cyc(2048, k) for k in (1, 2, 3, 4)]))
+O = dict(waveform=0, osc_level=0.4, osc2_on=1, osc2_wave=4, osc2_level=1.0, osc2_oct=0, osc2_semi=0, osc2_fine=0, osc3_on=0, pulse_width=0.05)
+y = render(plugin({**O, 'osc2_wt_file': 1}, wt2=tri3)); n = render(plugin({**O, 'osc2_wt_file': 0}, wt2=tri3))
+check('oscillator 2 plays its own file (the third harmonic of the key appears)', amp(y, 1320) > 0.05 and amp(n, 1320) < 0.2 * amp(y, 1320), f'({amp(y, 1320):.3f} vs {amp(n, 1320):.3f} with its FILE off)')
+y = render(plugin({**O, 'wt_use_file': 1, 'osc2_wt_file': 0}, wt=tri3)); check('the main oscillator\'s file and switch do not reach oscillator 2', amp(y, 1320) < 0.2 * amp(render(plugin({**O, 'osc2_wt_file': 1}, wt2=tri3)), 1320))
+O3 = dict(O, osc2_on=0, osc3_on=1, osc3_wave=4, osc3_level=1.0, osc3_oct=0, osc3_semi=0, osc3_fine=0)
+y = render(plugin({**O3, 'osc3_wt_file': 1}, wt3=tri3)); check('oscillator 3 plays its own file', amp(y, 1320) > 0.05, f'({amp(y, 1320):.3f})')
+y = render(plugin({**O3, 'osc3_wt_file': 1}, wt2=tri3)); check('oscillator 3 does not play oscillator 2\'s file', amp(y, 1320) < 0.2 * amp(render(plugin({**O3, 'osc3_wt_file': 1}, wt3=tri3)), 1320))
+y = render(plugin({**O, 'wt_use_file': 1, 'waveform': 4, 'osc2_wt_file': 1, 'osc_level': 0.4}, wt=sine1, wt2=tri3)); check('main and oscillator 2 play different files at the same time (440 Hz from one, 1320 Hz from the other)', amp(y, 440) > 0.1 and amp(y, 1320) > 0.05 and amp(y, 880) < 0.1 * amp(y, 440))
+Pa = plugin({**O, 'osc2_wt_file': 1}, wt2=tri3); Pb = load_plugin(PATH); Pb.raw_state = Pa.raw_state
+check('oscillator 2\'s file and switch survive a save and restore', np.allclose(render(Pa), render(Pb), atol=1e-6) and amp(render(Pb), 1320) > 0.05)
+# a project saved when one file served every oscillator: that file and switch now serve all three
+old = render(plugin({**O, 'wt_use_file': 1}, wt=tri3, drop=['osc2_wt_file', 'osc3_wt_file'])); new = render(plugin({**O, 'osc2_wt_file': 1}, wt2=tri3))
+check('an older state (one switch, one file) still plays that file on oscillator 2', np.allclose(old, new, atol=1e-6) and amp(old, 1320) > 0.05, f'({amp(old, 1320):.3f})')
+old = render(plugin({**O, 'wt_use_file': 0}, wt=tri3, drop=['osc2_wt_file', 'osc3_wt_file'])); check('an older state with the switch off keeps oscillator 2 on the built-in bank', np.array_equal(old, render(plugin({**O, 'osc2_wt_file': 0}))))
+# ---- smooth morph
+SM = dict(waveform=4, wt_use_file=1, osc_level=0.8)
+for pos, same in ((0.0, True), (1 / 3, True), (0.5, False)):
+    a = render(plugin({**SM, 'pulse_width': 0.05 + 0.9 * pos, 'wt_smooth': 0}, wt=four), note=60); b = render(plugin({**SM, 'pulse_width': 0.05 + 0.9 * pos, 'wt_smooth': 1}, wt=four), note=60)
+    check(f'smooth morph at Width position {pos:.2f}: ' + ('on a frame, the same as linear' if same else 'between frames, different from linear'), (np.abs(a - b).max() < 2e-3) == same, f'(max diff {np.abs(a - b).max():.3f})')
+a = render(plugin({**SM, 'wt_smooth': 0}, wt=four), note=60); b = render(plugin({**SM, 'wt_smooth': 1}, wt=four), note=60)
+check('with a single-frame file the smooth switch changes nothing', np.array_equal(render(plugin({**SM, 'wt_smooth': 0}, wt=sine1), note=60), render(plugin({**SM, 'wt_smooth': 1}, wt=sine1), note=60)))
+check('smooth morph defaults to off, and a project without it sounds like the default', not bool(P0.wavetable_smooth_morph) and np.array_equal(render(plugin(SM, wt=four), note=60), render(plugin(SM, wt=four, drop=['wt_smooth']), note=60)))
 print(f"RESULT: {'PASS' if all(rows) else 'FAIL'}  ({sum(rows)}/{len(rows)})")
 sys.exit(0 if all(rows) else 1)

@@ -151,6 +151,8 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
         flt (t + "_amt", "Mod " + juce::String (n) + " Amount", -1.0f, 1.0f, 0.0f);
         flt (t + "_curve", "Mod " + juce::String (n) + " Curve", -1.0f, 1.0f, 0.0f);
         choice (t + "_range", "Mod " + juce::String (n) + " Range", { "Full", "Positive", "Negative" }, 0);
+        toggle (t + "_cvmode", "Mod " + juce::String (n) + " Drawn Curve", false);        // on: the response follows the drawn points instead of the Curve bend
+        for (int j = 1; j <= rf::kCurvePts; ++j) flt (t + "_cv" + juce::String (j), "Mod " + juce::String (n) + " Curve Point " + juce::String (j), 0.0f, 1.0f, (float) (j - 1) / (float) (rf::kCurvePts - 1));
     }
     toggle ("vib_on", "Vibrato On", false);
     flt ("vib_rate_hz", "Vibrato Rate Hz", 0.5f, 10.0f, 5.5f);
@@ -296,10 +298,16 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     integer ("arp_pat_length", "Arp Pattern Length", 1, 64, 16);
     for (int i = 1; i <= 64; ++i) integer ("arp_pat_" + juce::String (i), "Arp Pattern Step " + juce::String (i), -12, 12, (i - 1) % 8);   // Custom mode: note number of each step
     // Tempo sync for the effects and the vibrato: Free keeps the Hz / ms control, a note value follows the host tempo (new controls default to Free)
-    for (const char* e : { "trem", "pan", "chorus", "flanger", "wah", "vib", "delay", "pdelay" })
+    for (const char* e : { "trem", "pan", "chorus", "flanger", "wah", "vib", "delay", "pdelay", "talk" })
         choice (juce::String (e) + "_sync", juce::String (e) + " Sync", syncNames(), 0);
     flt ("vib_delay_ms", "Vibrato Delay Ms", 0.0f, 3000.0f, 0.0f, 0.5f);      // each note waits this long before its vibrato starts
     flt ("vib_fade_ms", "Vibrato Fade In Ms", 0.0f, 3000.0f, 0.0f, 0.5f);     // then the vibrato grows to full depth over this long
+    flt ("vib_decay_ms", "Vibrato Decay Ms", 0.0f, 5000.0f, 0.0f, 0.5f);      // then it settles to the sustain level over this long
+    flt ("vib_sustain", "Vibrato Sustain", 0.0f, 1.0f, 1.0f);                 // the level it settles to, as a fraction of the depth
+    flt ("vib_vel", "Vibrato Velocity", 0.0f, 1.0f, 0.0f);                    // how much a soft note's vibrato is reduced (1: velocity scales it fully)
+    flt ("vib_wheel", "Vibrato Wheel", 0.0f, 1.0f, 0.0f);                     // the mod wheel adds up to this many semitones of depth
+    toggle ("osc2_wt_file", "Osc 2 Wavetable From File", false); toggle ("osc3_wt_file", "Osc 3 Wavetable From File", false);
+    toggle ("wt_smooth", "Wavetable Smooth Morph", false);        // on: the Width morph blends four neighbouring frames (cubic) instead of two
     toggle ("wt_use_file", "Wavetable From File", false);   // on: oscillators set to Wavetable play the loaded file instead of the built-in bank
     // Master
     flt ("master", "Master", 0.0f, 2.0f, 0.8f);
@@ -388,14 +396,18 @@ juce::File RelicProcessor::wavetablesRoot()
 
 void RelicProcessor::rebuildWavetable()
 {
-    std::shared_ptr<const WtRaw> raw; { const juce::SpinLock::ScopedLockType l (sampleLock); raw = wtRaw; }
-    if (raw == nullptr) return;
-    auto bank = rf::WaveTables::buildUser (raw->data, raw->frameLen, sr, raw->name);
-    const juce::SpinLock::ScopedLockType l (sampleLock); wtUser = bank;
+    for (int o = 0; o < 3; ++o)
+    {
+        std::shared_ptr<const WtRaw> raw; { const juce::SpinLock::ScopedLockType l (sampleLock); raw = wtRaw[o]; }
+        if (raw == nullptr) continue;
+        auto bank = rf::WaveTables::buildUser (raw->data, raw->frameLen, sr, raw->name);
+        const juce::SpinLock::ScopedLockType l (sampleLock); wtUser[o] = bank;
+    }
 }
 
-bool RelicProcessor::loadWavetableFile (const juce::File& f)
+bool RelicProcessor::loadWavetableFile (const juce::File& f, int osc)
 {
+    osc = juce::jlimit (0, 2, osc);
     juce::AudioFormatManager fm; fm.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
     if (r == nullptr || r->lengthInSamples < 2) { sampleError = "Couldn't read that wavetable"; return false; }
@@ -410,14 +422,15 @@ bool RelicProcessor::loadWavetableFile (const juce::File& f)
     raw->frameLen = rf::WaveTables::detectFrameLen ((size_t) n, hint); raw->name = f.getFileNameWithoutExtension().toStdString();
     auto bank = rf::WaveTables::buildUser (raw->data, raw->frameLen, sr, raw->name);
     if (bank == nullptr) { sampleError = "That file has no usable wavetable frames"; return false; }
-    { const juce::SpinLock::ScopedLockType l (sampleLock); wtRaw = raw; wtUser = bank; }
-    sampleError = {}; apvts.state.setProperty ("wavetablePath", f.getFullPathName(), nullptr); return true;
+    { const juce::SpinLock::ScopedLockType l (sampleLock); wtRaw[osc] = raw; wtUser[osc] = bank; }
+    sampleError = {}; apvts.state.setProperty (wtPathKey (osc), f.getFullPathName(), nullptr); return true;
 }
 
-void RelicProcessor::clearWavetable()
+void RelicProcessor::clearWavetable (int osc)
 {
-    { const juce::SpinLock::ScopedLockType l (sampleLock); wtRaw.reset(); wtUser.reset(); }
-    apvts.state.removeProperty ("wavetablePath", nullptr);
+    osc = juce::jlimit (0, 2, osc);
+    { const juce::SpinLock::ScopedLockType l (sampleLock); wtRaw[osc].reset(); wtUser[osc].reset(); }
+    apvts.state.removeProperty (wtPathKey (osc), nullptr);
 }
 
 std::vector<juce::File> RelicProcessor::scanWavetables (const juce::File& folder)
@@ -430,9 +443,9 @@ std::vector<juce::File> RelicProcessor::scanWavetables (const juce::File& folder
     return out;
 }
 
-bool RelicProcessor::stepWavetable (int dir)
+bool RelicProcessor::stepWavetable (int dir, int osc)
 {
-    const auto cur = getWavetableFile();
+    const auto cur = getWavetableFile (osc);
     const auto files = scanWavetables (cur.existsAsFile() ? cur.getParentDirectory() : wavetablesRoot());
     if (files.empty()) { sampleError = "No wavetable files in that folder"; return false; }
     int idx = -1; for (size_t i = 0; i < files.size(); ++i) if (files[i] == cur) { idx = (int) i; break; }
@@ -441,7 +454,7 @@ bool RelicProcessor::stepWavetable (int dir)
     for (int tries = 0; tries < n; ++tries)
     {
         idx = idx < 0 ? (dir > 0 ? 0 : n - 1) : ((idx + dir) % n + n) % n;
-        if (loadWavetableFile (files[(size_t) idx])) return true;
+        if (loadWavetableFile (files[(size_t) idx], osc)) return true;
     }
     return false;
 }
@@ -533,6 +546,16 @@ static void resetAllParameters (juce::AudioProcessor& proc)
             if (r->paramID != "bypass") { r->beginChangeGesture(); r->setValueNotifyingHost (r->getDefaultValue()); r->endChangeGesture(); }
 }
 
+// Before OSC 2 and 3 had their own wavetable file, the one FILE switch and file served every oscillator: an older state gives its file and switch to all three.
+static void migrateWavetableState (juce::XmlElement& xml)
+{
+    for (auto* e : xml.getChildWithTagNameIterator ("PARAM")) if (e->getStringAttribute ("id") == "osc2_wt_file" || e->getStringAttribute ("id") == "osc3_wt_file") return;
+    double on = 0.0; for (auto* e : xml.getChildWithTagNameIterator ("PARAM")) if (e->getStringAttribute ("id") == "wt_use_file") on = e->getDoubleAttribute ("value");
+    for (auto* id : { "osc2_wt_file", "osc3_wt_file" }) { auto* c = xml.createNewChildElement ("PARAM"); c->setAttribute ("id", id); c->setAttribute ("value", on); }
+    const auto path = xml.getStringAttribute ("wavetablePath");
+    if (path.isNotEmpty()) for (auto* k : { "wavetablePath2", "wavetablePath3" }) if (! xml.hasAttribute (k)) xml.setAttribute (k, path);
+}
+
 // Applies one part of a sound from a preset file: that part's controls are set (or reset when the file lacks them), everything else is left alone.
 bool RelicProcessor::loadPresetPart (const juce::XmlElement& xml, PresetPart part)
 {
@@ -553,8 +576,11 @@ bool RelicProcessor::loadPresetPart (const juce::XmlElement& xml, PresetPart par
     }
     if (part == PresetPart::Synth)
     {
-        const auto pw = xml.getStringAttribute ("wavetablePath"); juce::File fw (pw);
-        if (pw.isNotEmpty() && fw.existsAsFile()) loadWavetableFile (fw); else { clearWavetable(); if (pw.isNotEmpty()) sampleError = "Wavetable not found: " + fw.getFileName(); }
+        for (int o = 0; o < 3; ++o)
+        {
+            const auto pw = xml.getStringAttribute (wtPathKey (o)); juce::File fw (pw);
+            if (pw.isNotEmpty() && fw.existsAsFile()) loadWavetableFile (fw, o); else { clearWavetable (o); if (pw.isNotEmpty()) sampleError = "Wavetable not found: " + fw.getFileName(); }
+        }
     }
     return true;
 }
@@ -563,6 +589,7 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
 {
     auto xml = juce::XmlDocument::parse (f);
     if (xml == nullptr || ! xml->hasTagName ("STATE")) return false;
+    if (presetPartNames().indexOf (xml->getStringAttribute ("partType")) <= 0) migrateWavetableState (*xml);
     const int part = presetPartNames().indexOf (xml->getStringAttribute ("partType"));      // -1 / 0: a full preset (also every file from before partial presets)
     if (part > 0) return loadPresetPart (*xml, (PresetPart) part);
     resetAllParameters (*this);
@@ -576,7 +603,7 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
     else { clearSample(); if (samplePath.isNotEmpty()) sampleError = "Sample not found: " + sf.getFileName(); }
     { const auto pb = xml->getStringAttribute ("samplePathB"); juce::File fb (pb); if (pb.isNotEmpty() && fb.existsAsFile()) loadSampleFile (fb, false, true); else clearSampleB(); }
     { const auto pt = xml->getStringAttribute ("samplePathT"); juce::File ft (pt); if (pt.isNotEmpty() && ft.existsAsFile()) loadTextureFile (ft); else clearTexture(); }
-    { const auto pw = xml->getStringAttribute ("wavetablePath"); juce::File fw (pw); if (pw.isNotEmpty() && fw.existsAsFile()) loadWavetableFile (fw); else { clearWavetable(); if (pw.isNotEmpty()) sampleError = "Wavetable not found: " + fw.getFileName(); } }
+    for (int o = 0; o < 3; ++o) { const auto pw = xml->getStringAttribute (wtPathKey (o)); juce::File fw (pw); if (pw.isNotEmpty() && fw.existsAsFile()) loadWavetableFile (fw, o); else { clearWavetable (o); if (pw.isNotEmpty()) sampleError = "Wavetable not found: " + fw.getFileName(); } }
     apvts.state.setProperty ("presetName", xml->getStringAttribute ("presetName", f.getFileNameWithoutExtension()), nullptr);
     apvts.state.setProperty ("presetCategory", xml->getStringAttribute ("category"), nullptr);
     apvts.state.setProperty ("presetBank", f.getParentDirectory().getRelativePathFrom (presetsRoot()).replaceCharacter ('\\', '/'), nullptr);
@@ -585,7 +612,7 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
 
 void RelicProcessor::initPreset()
 {
-    resetAllParameters (*this); clearSample(); clearSampleB(); clearTexture(); clearWavetable(); sampleError = {};
+    resetAllParameters (*this); clearSample(); clearSampleB(); clearTexture(); for (int o = 0; o < 3; ++o) clearWavetable (o); sampleError = {};
     apvts.state.setProperty ("presetName", "Init", nullptr); apvts.state.setProperty ("presetBank", "", nullptr); apvts.state.setProperty ("presetCategory", "", nullptr);
 }
 
@@ -602,7 +629,7 @@ juce::File RelicProcessor::savePreset (const juce::String& name, const juce::Str
             for (int i = xml->getNumChildElements(); --i >= 0;)
                 if (auto* c = xml->getChildElement (i)) if (c->hasTagName ("PARAM") && presetPartOfParam (c->getStringAttribute ("id")) != part) xml->removeChildElement (c, true);
             for (auto* a : { "samplePath", "samplePathB", "samplePathT" }) if (part != PresetPart::Sample) xml->removeAttribute (a);
-            if (part != PresetPart::Synth) xml->removeAttribute ("wavetablePath");
+            if (part != PresetPart::Synth) for (int o = 0; o < 3; ++o) xml->removeAttribute (wtPathKey (o));
             xml->removeAttribute ("presetBank");
             xml->setAttribute ("partType", presetPartNames()[(int) part]);
         }
@@ -651,13 +678,13 @@ void RelicProcessor::prepareToPlay (double sampleRate, int)
     sampleCounter = 0; outEvts.clear(); engine.reset (0, outEvts); outEvts.clear(); inEvts.reserve (256); outEvts.reserve (512);
 }
 
-float RelicProcessor::oscSample (int shape, double phase, double hz, float pw) const
+float RelicProcessor::oscSample (int shape, double phase, double hz, float pw, const rf::WaveTables::UserBank* wt) const
 {
     const int band = rf::WaveTables::bandFor (hz);
     switch (shape)
     {
         case 0: return (float) std::sin (2.0 * rf::kPi * phase);
-        case 4: return curWt != nullptr ? tables.lookupUserMorph (*curWt, (pw - 0.05) / 0.9, band, phase) : tables.lookupMorph ((pw - 0.05) / 0.9, band, phase);
+        case 4: return wt != nullptr ? tables.lookupUserMorph (*wt, (pw - 0.05) / 0.9, band, phase, wtSmooth) : tables.lookupMorph ((pw - 0.05) / 0.9, band, phase);
         case 1: return tables.lookup (rf::WaveTables::Saw, band, phase) * 0.847f;
         case 2:
         {
@@ -738,7 +765,7 @@ void RelicProcessor::noteOn (int note, float vel)
         const int sl = ks == 0 ? pad : ks - 1;
         if (ks == 17 || sl >= cnt) return;                       // a muted pad, or a pad with no slice, stays silent
         const int choke = (int) kitChoke[(size_t) pad]->load();
-        if (choke > 0) for (auto& o : voices) if (o.active && o.chop && o.choke == choke && o.note != note && o.env.stage != rf::Adsr::Release) o.env.noteOff();
+        if (choke > 0) for (auto& o : voices) if (o.active && o.chop && o.choke == choke && o.note != note && ! o.choked) { o.choked = true; if (o.env.stage != rf::Adsr::Release) o.env.noteOff(); }
         {
             const int allowed = juce::jlimit (1, MaxVoices, (int) p ("voices")->load()); int idx = -1;
             for (int i = 0; i < allowed; ++i) if (voices[i].active && voices[i].note == note) { idx = i; break; }
@@ -747,7 +774,7 @@ void RelicProcessor::noteOn (int note, float vel)
             auto& vo = voices[idx]; const double nF = (double) audioSample->frames();
             vo.active = true; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.vibPh = 0.0; vo.vibAge = 0; vo.glide = 0.0f; vo.chop = true; vo.sampleActive = true; vo.sampleActiveB = false;
             vo.sliceA = std::floor (b[sl] * nF); vo.sliceB = std::min (nF - 1.0, std::floor (b[sl + 1] * nF));
-            vo.choke = choke; vo.chopRev = kitRev[(size_t) pad]->load() > 0.5f; vo.chopRateMul = std::exp2 ((double) kitPitch[(size_t) pad]->load() / 12.0);
+            vo.choked = false; vo.chokeGain = 1.0f; vo.choke = choke; vo.chopRev = kitRev[(size_t) pad]->load() > 0.5f; vo.chopRateMul = std::exp2 ((double) kitPitch[(size_t) pad]->load() / 12.0);
             vo.chopMul = std::pow (10.0f, kitLevel[(size_t) pad]->load() / 20.0f);
             if (vo.sliceB < vo.sliceA + 2.0) vo.sliceB = std::min (nF - 1.0, vo.sliceA + 2.0);
             vo.samplePos = (p ("sample_reverse")->load() > 0.5f) != vo.chopRev ? vo.sliceB - 1.0 : vo.sliceA;
@@ -920,7 +947,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
     const float normEff = shape >= 5 ? 1.0f : norm;
 
     // ---- modulation: LFOs for this chunk, then the active matrix slots ----
-    struct Slot { int src, dst, range; float amt, curveP; } slots[8]; int nSlots = 0; bool fMod = false;
+    struct Slot { int src, dst, range; float amt, curveP; bool drawn = false; float pts[rf::kCurvePts] {}; } slots[8]; int nSlots = 0; bool fMod = false;
     for (int k = 0; k < 8; ++k)
     {
         const juce::String t = "mod" + juce::String (k + 1);
@@ -928,7 +955,9 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
         if (sc > 0 && ds > 0 && am != 0.0f)
         {
             const float cv = p ((t + "_curve").toRawUTF8())->load();       // bend: above 0 starts slowly, below 0 starts fast
-            slots[nSlots++] = { sc, ds, (int) p ((t + "_range").toRawUTF8())->load(), am, cv == 0.0f ? 1.0f : std::exp2 (2.0f * cv) }; fMod |= (ds == 1 || ds == 2);
+            slots[nSlots] = { sc, ds, (int) p ((t + "_range").toRawUTF8())->load(), am, cv == 0.0f ? 1.0f : std::exp2 (2.0f * cv) }; fMod |= (ds == 1 || ds == 2);
+            if (p ((t + "_cvmode").toRawUTF8())->load() > 0.5f) { slots[nSlots].drawn = true; for (int j = 0; j < rf::kCurvePts; ++j) slots[nSlots].pts[j] = p ((t + "_cv" + juce::String (j + 1)).toRawUTF8())->load(); }
+            ++nSlots;
         }
     }
     const float ctl[4] = { p ("xy_x")->load(), p ("xy_y")->load(), p ("macro_1")->load(), p ("macro_2")->load() };
@@ -946,7 +975,9 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
     }
     const float wheel = modWheel.load(), bendSemis = pitchBend.load() * 2.0f;
     const bool vibOn = p ("vib_on")->load() > 0.5f; const float vibSemis = p ("vib_depth_ct")->load() * 0.01f;
-    const double vibDelaySm = p ("vib_delay_ms")->load() * 0.001 * sr, vibFadeSm = p ("vib_fade_ms")->load() * 0.001 * sr; const bool vibOnset = vibDelaySm > 0.0 || vibFadeSm > 0.0;
+    const double vibDelaySm = p ("vib_delay_ms")->load() * 0.001 * sr, vibFadeSm = p ("vib_fade_ms")->load() * 0.001 * sr; const double vibDecaySm = p ("vib_decay_ms")->load() * 0.001 * sr; const float vibSus = p ("vib_sustain")->load(), vibVel = p ("vib_vel")->load();
+    const bool vibOnset = vibDelaySm > 0.0 || vibFadeSm > 0.0 || vibDecaySm > 0.0 || vibSus < 0.999f || vibVel > 0.001f;
+    const float vibDepth = vibSemis + p ("vib_wheel")->load() * wheel;
     const bool portaOn = p ("porta_on")->load() > 0.5f; const float glideCoef = std::exp (-1.0f / (std::max (1.0f, p ("porta_ms")->load()) * 0.001f * (float) sr));
 
     struct Xo { bool on; int shape; float level; double mult; } xo[2];
@@ -992,7 +1023,8 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                 float x = sc == 1 ? lfoBuf[0][i] : sc == 2 ? lfoBuf[1][i] : sc == 3 ? vo.velocity : sc == 4 ? wheel : sc <= 6 ? ev[sc - 5] : sc <= 10 ? ctl[sc - 7]
                         : sc == 11 ? juce::jlimit (-1.0f, 1.0f, ((float) vo.note - 60.0f) / 24.0f) : vo.modRand;
                 if (slots[k].range == 1) x = std::max (0.0f, x); else if (slots[k].range == 2) x = std::min (0.0f, x);
-                if (slots[k].curveP != 1.0f) x = std::copysign (std::pow (std::abs (x), slots[k].curveP), x);
+                if (slots[k].drawn) x = std::copysign (rf::curveEval (slots[k].pts, std::abs (x)), x);
+                else if (slots[k].curveP != 1.0f) x = std::copysign (std::pow (std::abs (x), slots[k].curveP), x);
                 const float v = slots[k].amt * x;
                 switch (slots[k].dst) { case 1: mc += v; break; case 2: mr += v; break; case 3: mp += v; break; case 4: ml += v; break; case 5: mw += v; break;
                                         case 6: mpn += v; break; case 7: mtl += v; break; case 8: mtp += v; break; default: msl += v; break; }
@@ -1009,12 +1041,13 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                 else                                      // delay, then a fade-in, on this note's own vibrato (it starts from zero, so there is no jump)
                 {
                     const double a = (double) vo.vibAge++ - vibDelaySm;
-                    const float env = a <= 0.0 ? 0.0f : (vibFadeSm > 0.0 ? (float) std::min (1.0, a / vibFadeSm) : 1.0f);
+                    float env = a <= 0.0 ? 0.0f : (vibFadeSm > 0.0 ? (float) std::min (1.0, a / vibFadeSm) : 1.0f);
+                    if (a > vibFadeSm) { const double d = vibDecaySm > 0.0 ? std::min (1.0, (a - vibFadeSm) / vibDecaySm) : 1.0; env *= 1.0f - (1.0f - vibSus) * (float) d; }       // decay to the sustain level
                     vo.vibPh += vibHz / sr; if (vo.vibPh >= 1.0) vo.vibPh -= 1.0;
-                    vibNow = env * (float) std::sin (2.0 * rf::kPi * vo.vibPh);
+                    vibNow = env * (1.0f - vibVel * (1.0f - vo.velocity)) * (float) std::sin (2.0 * rf::kPi * vo.vibPh);
                 }
             }
-            float semis = mp * 12.0f + bendSemis + vibNow * vibSemis;
+            float semis = mp * 12.0f + bendSemis + vibNow * vibDepth;
             if (vo.glide != 0.0f) { semis += vo.glide; vo.glide *= glideCoef; if (std::abs (vo.glide) < 1e-3f) vo.glide = 0.0f; }
             const double pf = semis != 0.0f ? (double) std::exp2 (semis / 12.0f) : 1.0;
             const float pw = juce::jlimit (0.05f, 0.95f, pw0 + 0.45f * mw), lvl = juce::jlimit (0.0f, 2.0f, 1.0f + ml);
@@ -1050,7 +1083,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             for (int u = 0; u < uni; ++u)
             {
                 const double hz = vo.baseHz * ratio[u] * pf;
-                const float s = oscSample (shape, vo.phase[u], hz, pw);
+                const float s = oscSample (shape, vo.phase[u], hz, pw, curWt[0]);
                 vo.phase[u] += hz / sr; vo.phase[u] -= std::floor (vo.phase[u]);
                 l += s * gl[u]; r += s * gr[u];
             }
@@ -1058,7 +1091,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             for (int k = 0; k < 2; ++k) if (xo[k].on)
             {
                 const double hz = vo.baseHz * xo[k].mult * pf;
-                const float s = oscSample (xo[k].shape, vo.phaseX[k], hz, pw) * xo[k].level * level * lvl * vo.velocity * vSynth;
+                const float s = oscSample (xo[k].shape, vo.phaseX[k], hz, pw, curWt[k + 1]) * xo[k].level * level * lvl * vo.velocity * vSynth;
                 vo.phaseX[k] += hz / sr; vo.phaseX[k] -= std::floor (vo.phaseX[k]);
                 l += s; r += s;
             }
@@ -1066,7 +1099,9 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             if (haveS && vo.sampleActive && vo.chop)
             {
                 const int nn = smp->frames();
-                const bool vrev = rev != vo.chopRev; const float g = chopGain * vo.chopMul * vo.velocity * lvl * ea;
+                const bool vrev = rev != vo.chopRev;
+                if (vo.choked) { vo.chokeGain -= (float) (1.0 / (0.004 * sr)); if (vo.chokeGain <= 0.0f) { vo.chokeGain = 0.0f; vo.sampleActive = false; vo.env.stage = rf::Adsr::Idle; vo.env.level = 0.0f; } }       // a choked pad is cut in 4 ms, whatever its release
+                const float g = chopGain * vo.chopMul * vo.velocity * lvl * ea * vo.chokeGain;
                 float cl = cubic (smp->L, vo.samplePos, nn), cr = cubic (smp->R, vo.samplePos, nn);
                 const double cxf = loopOn && ! vrev ? std::min (xfF, 0.5 * (vo.sliceB - vo.sliceA)) : 0.0;
                 if (cxf > 0.0 && vo.samplePos >= vo.sliceB - cxf)
@@ -1214,8 +1249,9 @@ static inline float safe (float x)
 void RelicProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
-    { const juce::SpinLock::ScopedTryLockType l (sampleLock); if (l.isLocked()) { audioSample = sample; audioSampleB = sampleB; audioSampleT = sampleT; audioWt = wtUser; } }
-    curWt = (audioWt != nullptr && apvts.getRawParameterValue ("wt_use_file")->load() > 0.5f) ? audioWt.get() : nullptr;
+    { const juce::SpinLock::ScopedTryLockType l (sampleLock); if (l.isLocked()) { audioSample = sample; audioSampleB = sampleB; audioSampleT = sampleT; for (int o = 0; o < 3; ++o) audioWt[o] = wtUser[o]; } }
+    for (int o = 0; o < 3; ++o) curWt[o] = (audioWt[o] != nullptr && apvts.getRawParameterValue (wtToggleId (o))->load() > 0.5f) ? audioWt[o].get() : nullptr;
+    wtSmooth = apvts.getRawParameterValue ("wt_smooth")->load() > 0.5f;
     const int N = buffer.getNumSamples();
     buffer.clear();
     float* L = buffer.getWritePointer (0);
@@ -1255,13 +1291,30 @@ void RelicProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     const bool cOn = on ("crush_on"), pOn = on ("pan_on"), tOn = on ("trem_on"), kOn = on ("comp_on"), dOn = on ("delay_on"), chOn = on ("chorus_on"), flOn = on ("flanger_on"), rvOn = on ("reverb_on"),
                eqOn = on ("eq_on"), tpOn = on ("tape_on"), wdOn = on ("widener_on"), whOn = on ("wah_on"), lfOn = on ("lofi_on"), otOn = on ("ott_on"), pdOn = on ("pdelay_on"), tkOn = on ("talk_on"), sgOn = on ("sgate_on");
     const float master = p ("master")->load();
+    // Bar lock: a synced effect's LFO follows the host's position, so a cycle always starts on its note value's grid while the host plays
+    if (playing && ppq >= 0.0)
+    {
+        auto lock = [&] (const char* sync, double minBeats, auto&& apply)
+        {
+            const int idx = (int) p (sync)->load(); const double beats = rf::lfoSyncBeats (idx); if (idx == 0 || beats <= 0.0 || beats < minBeats) return;
+            const double hz = std::max (20.0, hostBpm) / 60.0 / beats; if (hz < 0.02 || hz > 30.0) return;        // outside the usable range the effect runs at its limit: leave it free
+            apply (hz);
+        };
+        auto at = [&] (const char* sync) { const double b = rf::lfoSyncBeats ((int) p (sync)->load()); return b; };
+        if (tOn) lock ("trem_sync", 0.0, [&] (double hz) { trem.lockPhase (rf::barLockedPhase (ppq, at ("trem_sync"), hz, sr)); });
+        if (pOn) lock ("pan_sync", 0.0, [&] (double hz) { panner.lockPhase (rf::barLockedPhase (ppq, at ("pan_sync"), hz, sr)); });
+        if (chOn) lock ("chorus_sync", 0.0, [&] (double hz) { chorus.lockPhase (rf::barLockedPhase (ppq, at ("chorus_sync"), hz, sr)); });
+        if (flOn) lock ("flanger_sync", 0.0, [&] (double hz) { flanger.lockPhase (rf::barLockedPhase (ppq, at ("flanger_sync"), hz, sr)); });
+        if (whOn) lock ("wah_sync", 0.0, [&] (double hz) { wah.lockPhase (rf::barLockedPhase (ppq, at ("wah_sync"), hz, sr)); });
+        if (tkOn) lock ("talk_sync", 0.0, [&] (double hz) { const double b = at ("talk_sync"), x = ppq / b; talk.lockPhase (x - std::floor (x), hz, sr); });
+    }
     for (int i = 0; i < N; ++i)
     {
         float l = L[i], r = R[i];
         if (cOn) crush.process (l, r, p ("crush_bits")->load(), p ("crush_downsample")->load(), p ("crush_mix")->load());
         if (lfOn) lofi.process (l, r, p ("lofi_tone_hz")->load(), p ("lofi_noise")->load(), p ("lofi_wobble")->load(), p ("lofi_mix")->load(), sr);
         if (whOn) wah.process (l, r, (int) p ("wah_mode")->load(), rf::syncedHz ((int) p ("wah_sync")->load(), hostBpm, p ("wah_rate_hz")->load()), p ("wah_depth")->load(), p ("wah_reso")->load(), p ("wah_mix")->load(), sr);
-        if (tkOn) talk.process (l, r, p ("talk_vowel")->load(), p ("talk_reso")->load(), p ("talk_rate_hz")->load(), p ("talk_depth")->load(), p ("talk_mix")->load(), sr);
+        if (tkOn) talk.process (l, r, p ("talk_vowel")->load(), p ("talk_reso")->load(), rf::syncedHz ((int) p ("talk_sync")->load(), hostBpm, p ("talk_rate_hz")->load()), p ("talk_depth")->load(), p ("talk_mix")->load(), sr);
         if (tpOn) tape.process (l, r, p ("tape_drive")->load(), p ("tape_tone")->load(), p ("tape_wobble")->load(), sr);
         if (eqOn) eq.process (l, r, p ("eq_low_db")->load(), p ("eq_mid_hz")->load(), p ("eq_mid_db")->load(), p ("eq_high_db")->load(), sr);
         if (pOn) panner.process (l, r, rf::syncedHz ((int) p ("pan_sync")->load(), hostBpm, p ("pan_rate_hz")->load()), p ("pan_depth")->load(), (int) p ("pan_shape")->load(), sr);
@@ -1297,6 +1350,7 @@ void RelicProcessor::setStateInformation (const void* data, int size)
         {
             // A partial preset handed over as a state (never written by this plugin itself) changes only its own part of the sound.
             if (const int part = presetPartNames().indexOf (xml->getStringAttribute ("partType")); part > 0) { loadPresetPart (*xml, (PresetPart) part); return; }
+            migrateWavetableState (*xml);
             auto state = juce::ValueTree::fromXml (*xml);
             // Older projects predate GO/STOP; preserve their always-running arp,
             // even when loaded over a stopped instance.
@@ -1333,9 +1387,12 @@ void RelicProcessor::setStateInformation (const void* data, int size)
             if (pathB.isNotEmpty()) { juce::File f (pathB); if (f.existsAsFile()) loadSampleFile (f, false, true); }
             const auto pathT = apvts.state.getProperty ("samplePathT").toString();
             if (pathT.isNotEmpty()) { juce::File f (pathT); if (f.existsAsFile()) loadTextureFile (f); }
-            const auto pathW = apvts.state.getProperty ("wavetablePath").toString();
-            if (pathW.isNotEmpty()) { juce::File f (pathW); if (f.existsAsFile()) loadWavetableFile (f); else { clearWavetable(); sampleError = "Wavetable not found: " + f.getFileName(); } }
-            else clearWavetable();
+            for (int o = 0; o < 3; ++o)
+            {
+                const auto pathW = apvts.state.getProperty (wtPathKey (o)).toString();
+                if (pathW.isNotEmpty()) { juce::File f (pathW); if (f.existsAsFile()) loadWavetableFile (f, o); else { clearWavetable (o); sampleError = "Wavetable not found: " + f.getFileName(); } }
+                else clearWavetable (o);
+            }
         }
 }
 

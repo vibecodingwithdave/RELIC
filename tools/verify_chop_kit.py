@@ -62,6 +62,9 @@ check('same group: pad 2 cuts pad 1 off', tone(same, 0.7, 0.95, 220) < 0.05 * to
 check('different groups do not cut each other', tone(other, 0.7, 0.95, 220) > 0.9 * tone(free, 0.7, 0.95, 220))
 check('pad 1 before pad 2 starts is unaffected by the group', abs(rms(same, 0.1, 0.45) - rms(free, 0.1, 0.45)) < 1e-6)
 x = render([(36, 0.0, 0.4), (36, 0.5, 1.0)], dur=1.4, **K(1, choke=1)); check('a pad does not choke itself (retrigger plays)', rms(x, 0.55, 0.9) > 0.02)
+slow = render([(36, 0.0, 1.5), (37, 0.5, 1.5)], dur=1.8, release_ms=600.0, **K(1, choke=1), **K(2, choke=1)); noch = render([(36, 0.0, 1.5), (37, 0.5, 1.5)], dur=1.8, release_ms=600.0, **K(1, choke=1), **K(2, choke=2))
+check('a choked pad is cut within about 10 ms even with a 600 ms release', tone(slow, 0.52, 0.6, 220) < 0.03 * tone(noch, 0.52, 0.6, 220) and tone(noch, 0.52, 0.6, 220) > 0.02, f'({tone(slow, 0.52, 0.6, 220):.4f} vs {tone(noch, 0.52, 0.6, 220):.3f})')
+check('the cut has no click (no sample-to-sample jump above the tone\'s own)', np.abs(np.diff(slow[int(0.48 * SR):int(0.58 * SR)])).max() < 3 * np.abs(np.diff(noch[int(0.48 * SR):int(0.52 * SR)])).max())
 print('== SAVED STATE ==')
 kit = {**K(1, slice=3, pitch=7, rev=1, level=-3.0, choke=2), **K(16, slice=1, pitch=-5, level=2.5, choke=4)}
 ref = render([(36, 0.0, 1.0), (51, 1.2, 2.2)], dur=2.6, **kit); raw = P.raw_state

@@ -1,6 +1,7 @@
 // Skinnable editor. Layout follows the user's mockup (1484 x 1060 design units).
 // Everything is drawn in code for now; image art can replace the paint routines later.
 #pragma once
+#include "Dsp/SliceSnap.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
 #include "FontMetrics.h"
@@ -639,6 +640,12 @@ public:
         {
             const int cnt = juce::jlimit (2, 16, (int) val ("chop_count")); float lo = 0.0f, hi = 1.0f; const float me = val (pid.toRawUTF8());
             for (int i = 1; i < cnt; ++i) { if (i == chopDrag) continue; const float o = val (("chop_pt_" + juce::String (i)).toRawUTF8()); if (o <= me) lo = std::max (lo, o); else hi = std::min (hi, o); }
+            if (auto sm = proc.getSample(); sm != nullptr && ! e.mods.isShiftDown())       // snaps to a zero crossing (no click at the cut), or to the tempo grid with Alt; Shift places it freely
+            {
+                const double nF = (double) sm->frames();
+                if (e.mods.isAltDown()) { static const double beats[4] = { 1.0, 0.5, 0.25, 0.125 }; v = (float) rf::snap::gridPoint (v, beats[juce::jlimit (0, 3, (int) val ("chop_grid"))], proc.getHostBpm(), sm->rate, sm->frames()); }
+                else v = (float) (rf::snap::zeroCrossing (sm->L.data(), sm->R.empty() ? nullptr : sm->R.data(), sm->frames(), (double) v * nF, (int) (sm->rate * 0.006)) / nF);
+            }
             v = juce::jlimit (lo + 0.003f, hi - 0.003f, v);
         }
         else if (pid == id (0)) v = std::min (v, val (id (1)) - 0.01f);
@@ -1014,6 +1021,118 @@ private:
     RelicProcessor& proc; std::array<Row, 16> rows; juce::TextButton resetB, reverseB;
 };
 
+// The vibrato's shape over a note: wait (Delay), grow (Fade-in), settle (Decay to Sustain), plus how much velocity and the mod wheel matter. The curve at the top follows the sliders.
+class VibratoPanel : public juce::Component, private juce::Timer
+{
+public:
+    VibratoPanel (RelicProcessor& p) : proc (p)
+    {
+        static const struct { const char* id; const char* label; const char* suffix; } rows[6] = { { "vib_delay_ms", "DELAY", " ms" }, { "vib_fade_ms", "FADE-IN", " ms" }, { "vib_decay_ms", "DECAY", " ms" },
+                                                                                             { "vib_sustain", "SUSTAIN", "" }, { "vib_vel", "VELOCITY", "" }, { "vib_wheel", "MOD WHEEL", " st" } };
+        for (int i = 0; i < 6; ++i)
+        {
+            auto& r = row[(size_t) i]; r.label.setText (rows[i].label, juce::dontSendNotification); r.label.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0)); r.label.setFont (juce::FontOptions (12.5f));
+            r.slider.setSliderStyle (juce::Slider::LinearHorizontal); r.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 20); r.slider.setTextValueSuffix (rows[i].suffix);
+            r.slider.setNumDecimalPlacesToDisplay (i < 3 ? 0 : 2); r.slider.setTooltip (help::forId (rows[i].id));
+            r.att = std::make_unique<juce::SliderParameterAttachment> (*proc.apvts.getParameter (rows[i].id), r.slider); addAndMakeVisible (r.label); addAndMakeVisible (r.slider);
+        }
+        setSize (420, 112 + 6 * 28 + 10); startTimerHz (20);
+    }
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xff17131c)); const auto box = juce::Rectangle<float> (12.0f, 10.0f, (float) getWidth() - 24.0f, 92.0f);
+        g.setColour (juce::Colour (0xff0b090e)); g.fillRoundedRectangle (box, 4.0f);
+        const float d = val ("vib_delay_ms"), f = val ("vib_fade_ms"), dc = val ("vib_decay_ms"), su = val ("vib_sustain");
+        const float total = std::max (600.0f, (d + f + dc) * 1.25f + 200.0f), hold = total - (d + f + dc);
+        auto X = [&] (float ms) { return box.getX() + 6.0f + (box.getWidth() - 12.0f) * ms / total; }; auto Y = [&] (float v) { return box.getBottom() - 8.0f - (box.getHeight() - 16.0f) * v; };
+        juce::Path pth; pth.startNewSubPath (X (0), Y (0)); pth.lineTo (X (d), Y (0)); pth.lineTo (X (d + f), Y (1)); pth.lineTo (X (d + f + dc), Y (su)); pth.lineTo (X (d + f + dc + hold * 0.6f), Y (su)); pth.lineTo (X (total), Y (0));
+        g.setColour (juce::Colour (0xff9be15d)); g.strokePath (pth, juce::PathStrokeType (2.0f));
+        g.setColour (juce::Colour (0xffe8e0b0).withAlpha (0.6f)); g.setFont (juce::FontOptions (11.0f)); g.drawText ("depth over one note (the note's release ends it)", box.reduced (8, 3).toNearestInt(), juce::Justification::topRight);
+    }
+    void resized() override { for (int i = 0; i < 6; ++i) { auto& r = row[(size_t) i]; const int y = 112 + i * 28; r.label.setBounds (14, y, 84, 24); r.slider.setBounds (100, y, getWidth() - 112, 24); } }
+private:
+    struct Row { juce::Label label; juce::Slider slider; std::unique_ptr<juce::SliderParameterAttachment> att; };
+    float val (const char* id) const { return proc.apvts.getRawParameterValue (id)->load(); }
+    void timerCallback() override { repaint (0, 0, getWidth(), 106); }
+    RelicProcessor& proc; std::array<Row, 6> row;
+};
+
+// A modulation slot's response drawn by hand: nine points, drag across the graph to paint them. The horizontal axis is how far the source is from zero (0 to 1), the vertical
+// axis how much of it passes (0 to 1); a negative source keeps its sign.
+class CurveGraph : public juce::Component
+{
+public:
+    CurveGraph (RelicProcessor& p, int slotNo) : proc (p), slot (slotNo) { setMouseCursor (juce::MouseCursor::CrosshairCursor); }
+    void paint (juce::Graphics& g) override
+    {
+        const auto b = area(); g.setColour (juce::Colour (0xff0b090e)); g.fillRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
+        g.setColour (juce::Colour (0xffe8e0b0).withAlpha (0.18f));
+        for (int i = 0; i <= 4; ++i) { g.drawHorizontalLine ((int) (b.getY() + b.getHeight() * i / 4.0f), b.getX(), b.getRight()); g.drawVerticalLine ((int) (b.getX() + b.getWidth() * i / 4.0f), b.getY(), b.getBottom()); }
+        float pts[rf::kCurvePts]; for (int j = 0; j < rf::kCurvePts; ++j) pts[j] = get (j);
+        const bool on = proc.apvts.getRawParameterValue (id ("cvmode"))->load() > 0.5f;
+        g.setColour (juce::Colour (0xffe8e0b0).withAlpha (0.35f)); g.drawLine (b.getX(), b.getBottom(), b.getRight(), b.getY(), 1.0f);      // the straight line, for comparison
+        juce::Path path; for (int i = 0; i <= 160; ++i) { const float x = (float) i / 160.0f, y = rf::curveEval (pts, x); const float px = b.getX() + x * b.getWidth(), py = b.getBottom() - y * b.getHeight(); if (i == 0) path.startNewSubPath (px, py); else path.lineTo (px, py); }
+        g.setColour (on ? juce::Colour (0xff9be15d) : juce::Colour (0xff9be15d).withAlpha (0.4f)); g.strokePath (path, juce::PathStrokeType (2.2f));
+        for (int j = 0; j < rf::kCurvePts; ++j) { const float px = b.getX() + b.getWidth() * (float) j / (float) (rf::kCurvePts - 1), py = b.getBottom() - pts[j] * b.getHeight(); g.setColour (juce::Colour (0xffe8e0b0)); g.fillEllipse (px - 4.5f, py - 4.5f, 9.0f, 9.0f); }
+    }
+    void mouseDown (const juce::MouseEvent& e) override { for (int j = 0; j < rf::kCurvePts; ++j) proc.apvts.getParameter (id ("cv" + juce::String (j + 1)))->beginChangeGesture(); touched = true; lastCol = -1; paintAt (e); }
+    void mouseDrag (const juce::MouseEvent& e) override { paintAt (e); }
+    void mouseUp (const juce::MouseEvent&) override { if (touched) for (int j = 0; j < rf::kCurvePts; ++j) proc.apvts.getParameter (id ("cv" + juce::String (j + 1)))->endChangeGesture(); touched = false; lastCol = -1; }
+    void setAll (const float* v) { for (int j = 0; j < rf::kCurvePts; ++j) { auto* q = proc.apvts.getParameter (id ("cv" + juce::String (j + 1))); q->beginChangeGesture(); q->setValueNotifyingHost (v[j]); q->endChangeGesture(); } repaint(); }
+private:
+    juce::String id (const juce::String& k) const { return "mod" + juce::String (slot) + "_" + k; }
+    float get (int j) const { return proc.apvts.getRawParameterValue (id ("cv" + juce::String (j + 1)))->load(); }
+    juce::Rectangle<float> area() const { return getLocalBounds().toFloat().reduced (14.0f, 12.0f); }
+    void paintAt (const juce::MouseEvent& e)
+    {
+        const auto b = area(); const int j = juce::jlimit (0, rf::kCurvePts - 1, (int) std::lround ((e.position.x - b.getX()) / b.getWidth() * (float) (rf::kCurvePts - 1)));
+        const float y = juce::jlimit (0.0f, 1.0f, (b.getBottom() - e.position.y) / b.getHeight());
+        proc.apvts.getParameter (id ("cv" + juce::String (j + 1)))->setValueNotifyingHost (y);
+        // a quick drag skips columns: fill the ones between the last and this one so the line stays continuous
+        if (lastCol >= 0 && std::abs (j - lastCol) > 1) for (int k = std::min (j, lastCol) + 1; k < std::max (j, lastCol); ++k) proc.apvts.getParameter (id ("cv" + juce::String (k + 1)))->setValueNotifyingHost (lastY + (y - lastY) * (float) (k - lastCol) / (float) (j - lastCol));
+        lastCol = j; lastY = y;
+        if (auto* m = proc.apvts.getParameter (id ("cvmode"))) if (m->getValue() < 0.5f) m->setValueNotifyingHost (1.0f);       // drawing turns the drawn curve on
+        repaint();
+    }
+    RelicProcessor& proc; int slot; bool touched = false; int lastCol = -1; float lastY = 0.0f;
+};
+
+class CurvePanel : public juce::Component, private juce::Timer
+{
+public:
+    CurvePanel (RelicProcessor& p, int slotNo) : proc (p), graph (p, slotNo)
+    {
+        addAndMakeVisible (graph); const juce::String t = "mod" + juce::String (slotNo) + "_";
+        use.setButtonText ("USE DRAWN CURVE"); use.setTooltip ("On: the slot follows the drawn curve. Off: it uses the CURVE bend.");
+        useA = std::make_unique<juce::ButtonParameterAttachment> (*proc.apvts.getParameter (t + "cvmode"), use); addAndMakeVisible (use);
+        title.setText ("MOD " + juce::String (slotNo) + " CURVE", juce::dontSendNotification); title.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0)); title.setFont (juce::FontOptions (14.0f)); addAndMakeVisible (title);
+        for (auto* b : { &lineB, &presetB }) addAndMakeVisible (b);
+        lineB.setButtonText ("STRAIGHT LINE"); presetB.setButtonText ("SHAPES...");
+        lineB.onClick = [this] { float v[rf::kCurvePts]; for (int j = 0; j < rf::kCurvePts; ++j) v[j] = (float) j / (float) (rf::kCurvePts - 1); graph.setAll (v); };
+        presetB.onClick = [this]
+        {
+            juce::PopupMenu m; const char* names[6] = { "S curve", "Slow start", "Fast start", "Steps", "Valley", "Hill" }; for (int i = 0; i < 6; ++i) m.addItem (i + 1, names[i]);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetB), [this] (int r)
+            {
+                if (r < 1) return; float v[rf::kCurvePts];
+                for (int j = 0; j < rf::kCurvePts; ++j)
+                {
+                    const float x = (float) j / (float) (rf::kCurvePts - 1);
+                    switch (r) { case 1: v[j] = x * x * (3.0f - 2.0f * x); break; case 2: v[j] = x * x; break; case 3: v[j] = std::sqrt (x); break; case 4: v[j] = std::floor (x * 4.0f + 0.001f) / 4.0f; if (v[j] > 1.0f) v[j] = 1.0f; break;
+                                 case 5: v[j] = std::abs (2.0f * x - 1.0f); break; default: v[j] = 1.0f - std::abs (2.0f * x - 1.0f); }
+                }
+                graph.setAll (v);
+            });
+        };
+        setSize (400, 330); startTimerHz (10);
+    }
+    void paint (juce::Graphics& g) override { g.fillAll (juce::Colour (0xff17131c)); }
+    void resized() override { title.setBounds (12, 8, 200, 22); use.setBounds (216, 8, 176, 22); graph.setBounds (12, 36, getWidth() - 24, 240); lineB.setBounds (12, 288, 150, 28); presetB.setBounds (170, 288, 120, 28); }
+private:
+    void timerCallback() override { graph.repaint(); }
+    RelicProcessor& proc; CurveGraph graph; juce::Label title; juce::ToggleButton use; juce::TextButton lineB, presetB; std::unique_ptr<juce::ButtonParameterAttachment> useA;
+};
+
 // Bars for one pass of the arpeggio on a demo triad; the bar for the step that just played lights up.
 class ArpDisplay : public Display
 {
@@ -1233,12 +1352,15 @@ public:
         att = std::make_unique<juce::SliderParameterAttachment> (*s.getParameter (id), slider, nullptr);
         slider.onValueChange = [this] { repaint(); };
     }
+    std::function<void()> onLabelClick;          // clicking the label strip (used by CURVE to open the curve editor)
+    std::function<bool()> showAlt;               // when it returns true the value reads "DRAWN"
     void resized() override { slider.setBounds (getLocalBounds().withTrimmedTop (getHeight() * 40 / 100)); }
+    void mouseUp (const juce::MouseEvent& e) override { if (onLabelClick && e.position.y < (float) getHeight() * 0.4f && contains (e.getPosition())) onLabelClick(); }
     void paint (juce::Graphics& g) override
     {
         const float lh = (float) getHeight() * 0.34f; const double v = slider.getValue();
         g.setColour (parchment); drawText (g, label, juce::Rectangle<int> (6, 0, getWidth() / 2, (int) lh), lh * 0.95f, juce::Justification::left);
-        g.setColour (lime); drawText (g, juce::String (v > 0.0005 ? "+" : "") + juce::String ((int) std::lround (v * 100.0)) + "%", juce::Rectangle<int> (getWidth() / 2 - 6, 0, getWidth() / 2, (int) lh), lh * 0.95f, juce::Justification::right);
+        g.setColour (lime); drawText (g, showAlt && showAlt() ? juce::String ("DRAWN") : juce::String (v > 0.0005 ? "+" : "") + juce::String ((int) std::lround (v * 100.0)) + "%", juce::Rectangle<int> (getWidth() / 2 - 6, 0, getWidth() / 2, (int) lh), lh * 0.95f, juce::Justification::right);
     }
 private:
     juce::Slider slider; juce::String label; std::unique_ptr<juce::SliderParameterAttachment> att;
@@ -1322,10 +1444,10 @@ private:
     struct Pad { std::unique_ptr<ui::StoneButton> btn; std::unique_ptr<juce::ButtonParameterAttachment> att; const char* id; };
     std::vector<Pad> pads;
     std::unique_ptr<ui::StoneButton> waveLeft, waveRight, waveName, polyBtn, allOn, bypassFx;
-    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn;      // wavetable file strip on the OSC tab
+    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn, vibEnvBtn, wtOscBtn; int wtOsc = 0;      // wavetable file strip on the OSC tab
     struct SyncChip { std::unique_ptr<ui::StoneButton> btn; juce::String knobId, syncId; };
     std::vector<SyncChip> syncChips; void updateSyncChips();        // a small note-value button on each rate / time knob that can follow the host tempo
-    void showWavetableMenu(); void loadWavetableDialog(); void afterWavetableLoaded();
+    void updateWtStrip(); void showWavetableMenu(); void loadWavetableDialog(); void afterWavetableLoaded();
     juce::Label waveLabel;
 
     // FX tab controls

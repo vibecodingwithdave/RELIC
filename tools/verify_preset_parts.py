@@ -23,7 +23,7 @@ def part_of(i):
     return 'Synth'
 PARTS = ['Synth', 'Sample', 'Modulation', 'Effects', 'Arp & Chords']
 fresh = load_plugin(PATH); DEF = values(fresh.raw_state); IDS = sorted(DEF)
-check('every control is assigned to a part (478 controls, five parts, none left over)', len(IDS) == 478 and {part_of(i) for i in IDS} == set(PARTS), f'({ {p: sum(part_of(i) == p for i in IDS) for p in PARTS} })')
+check('every control is assigned to a part (566 controls, five parts, none left over)', len(IDS) == 566 and {part_of(i) for i in IDS} == set(PARTS), f'({ {p: sum(part_of(i) == p for i in IDS) for p in PARTS} })')
 # a different value for every control: taken from the factory presets, or set by hand where no preset moves it
 seen = {}
 for f in glob.glob(str(ROOT / 'Assets/presets/*.xml')):

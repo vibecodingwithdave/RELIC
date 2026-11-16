@@ -184,12 +184,15 @@ RelicEditor::RelicEditor (RelicProcessor& p)
         { "attack_ms", "Attack" }, { "decay_ms", "Decay" }, { "sustain", "Sustain" }, { "release_ms", "Release" } };
     for (auto& k : oscKnobs) oscGroup.push_back (addKnob (k.first, k.second));
     // wavetable file strip: FILE switches the Wavetable oscillators between the built-in bank and the loaded file; the arrows step through the file's folder
-    oscGroup.push_back (addNoteToggle ("wt_use_file", "FILE", 0.4f));
+    for (int o = 0; o < 3; ++o) oscGroup.push_back (addNoteToggle (RelicProcessor::wtToggleId (o), "FILE", 0.4f));        // one per oscillator; only the chosen oscillator's is shown
+    oscGroup.push_back (addNoteToggle ("wt_smooth", "SMOOTH", 0.34f));
+    wtOscBtn = std::make_unique<ui::StoneButton> ("OSC 1", true, false); wtOscBtn->textScale = 0.34f; wtOscBtn->setTooltip (help::forName ("wt_osc")); addAndMakeVisible (*wtOscBtn); oscGroup.push_back (wtOscBtn.get());
+    wtOscBtn->onClick = [this] { wtOsc = (wtOsc + 1) % 3; wtOscBtn->setButtonText ("OSC " + juce::String (wtOsc + 1)); updateWtStrip(); lastWtName = "\x01"; };
     wtPrev = std::make_unique<ui::StoneButton> ("<", true, false); wtNext = std::make_unique<ui::StoneButton> (">", true, false);
     wtName = std::make_unique<ui::StoneButton> ("LOAD A WAVETABLE...", true, false); wtLoad = std::make_unique<ui::StoneButton> ("LOAD FILE", true, false);
     wtName->textScale = 0.3f; wtLoad->textScale = 0.3f;
-    wtPrev->onClick = [this] { if (proc.stepWavetable (-1)) afterWavetableLoaded(); else repaint(); };
-    wtNext->onClick = [this] { if (proc.stepWavetable (+1)) afterWavetableLoaded(); else repaint(); };
+    wtPrev->onClick = [this] { if (proc.stepWavetable (-1, wtOsc)) afterWavetableLoaded(); else repaint(); };
+    wtNext->onClick = [this] { if (proc.stepWavetable (+1, wtOsc)) afterWavetableLoaded(); else repaint(); };
     wtName->onClick = [this] { showWavetableMenu(); };
     wtLoad->onClick = [this] { loadWavetableDialog(); };
     for (auto* b : { wtPrev.get(), wtNext.get(), wtName.get(), wtLoad.get() }) { addAndMakeVisible (b); oscGroup.push_back (b); }
@@ -419,7 +422,15 @@ RelicEditor::RelicEditor (RelicProcessor& p)
         addStepper ((t + "_src").toRawUTF8(), "Source", modGroup); addStepper ((t + "_dst").toRawUTF8(), "Target", modGroup); addStepper ((t + "_range").toRawUTF8(), "Range", modGroup);
         for (auto k : { std::make_pair ("_amt", "AMOUNT"), { "_curve", "CURVE" } })
         {
-            amountSliders.push_back (std::make_unique<ui::AmountSlider> (proc.apvts, t + k.first, k.second)); amountSliders.back()->setTooltip (help::forId (t + k.first)); addAndMakeVisible (*amountSliders.back()); modGroup.push_back (amountSliders.back().get());
+            amountSliders.push_back (std::make_unique<ui::AmountSlider> (proc.apvts, t + k.first, juce::String (k.second) + (juce::String (k.first) == "_curve" ? "..." : "")));
+            if (juce::String (k.first) == "_curve")      // clicking the label opens the drawn-curve editor
+            {
+                auto* sl = amountSliders.back().get(); sl->setTooltip (help::forId (t + k.first) + " Click the label to draw your own curve.");
+                sl->onLabelClick = [this, n] { juce::CallOutBox::launchAsynchronously (std::make_unique<ui::CurvePanel> (proc, n), amountSliders[(size_t) (2 * (n - 1) + 1)]->getScreenBounds(), nullptr); };
+                sl->showAlt = [this, t] { return proc.apvts.getRawParameterValue ((t + "_cvmode").toRawUTF8())->load() > 0.5f; };
+            }
+            else amountSliders.back()->setTooltip (help::forId (t + k.first));
+            addAndMakeVisible (*amountSliders.back()); modGroup.push_back (amountSliders.back().get());
         }
     }
     for (int i = 0; i < 2; ++i)
@@ -429,7 +440,9 @@ RelicEditor::RelicEditor (RelicProcessor& p)
     }
     addNoteToggle ("vib_on", "VIB", 0.42f); addNoteToggle ("porta_on", "PORTA", 0.38f);
     for (auto id : { "lfo1_keysync", "lfo2_keysync" }) modGroup.push_back (addNoteToggle (id, "KEY SYNC", 0.36f));
-    addKnob ("vib_rate_hz", "V.Rate"); addKnob ("vib_depth_ct", "V.Depth"); addKnob ("porta_ms", "Glide"); addKnob ("vib_delay_ms", "V.Delay"); addKnob ("vib_fade_ms", "V.Fade");
+    addKnob ("vib_rate_hz", "V.Rate"); addKnob ("vib_depth_ct", "V.Depth"); addKnob ("porta_ms", "Glide");
+    vibEnvBtn = std::make_unique<ui::StoneButton> ("VIB ENVELOPE", true, false); vibEnvBtn->textScale = 0.34f; vibEnvBtn->setTooltip (help::forName ("VIB ENVELOPE")); addAndMakeVisible (*vibEnvBtn);
+    vibEnvBtn->onClick = [this] { juce::CallOutBox::launchAsynchronously (std::make_unique<ui::VibratoPanel> (proc), vibEnvBtn->getScreenBounds(), nullptr); };
 
     // ---- sidebar: the eight icon buttons, and the CRAFT / UNDO / REDO / CHAOS buttons over the picture ----
     const char* side[8] = { "Presets", "Chords", "One-shots", "Textures", "Expand", "History", "Save", "Init" };
@@ -523,7 +536,7 @@ RelicEditor::RelicEditor (RelicProcessor& p)
 
     // tempo-sync chips: each sits over the top-right corner of its rate / time knob and shows FREE or the note value
     for (auto pr : { std::make_pair ("trem_rate_hz", "trem_sync"), { "pan_rate_hz", "pan_sync" }, { "chorus_rate_hz", "chorus_sync" }, { "flanger_rate_hz", "flanger_sync" }, { "wah_rate_hz", "wah_sync" },
-                     { "vib_rate_hz", "vib_sync" }, { "delay_time_ms", "delay_sync" }, { "pdelay_time_ms", "pdelay_sync" } })
+                     { "vib_rate_hz", "vib_sync" }, { "delay_time_ms", "delay_sync" }, { "pdelay_time_ms", "pdelay_sync" }, { "talk_rate_hz", "talk_sync" } })
     {
         SyncChip sc; sc.knobId = pr.first; sc.syncId = pr.second;
         sc.btn = std::make_unique<ui::StoneButton> ("FREE", true, false); sc.btn->textScale = 0.34f; sc.btn->setTooltip (help::forName ("SYNC CHIP"));
@@ -647,7 +660,7 @@ void RelicEditor::updateTextureView()
 
 void RelicEditor::setTab (int t)
 {
-    currentTab = t; struct Later { RelicEditor* e; ~Later() { e->updateSyncChips(); } } later { this };
+    currentTab = t; struct Later { RelicEditor* e; ~Later() { e->updateSyncChips(); e->updateWtStrip(); } } later { this };
     for (int i = 0; i < 11; ++i) tabs[i]->setToggleState (i == t, juce::dontSendNotification);
     for (auto* c : oscGroup) c->setVisible (t == 1);
     for (auto* c : sampGroup) c->setVisible (t == 0);
@@ -677,7 +690,7 @@ void RelicEditor::timerCallback()
     proc.historyTick(); undoBtn->setEnabled (proc.canUndo()); redoBtn->setEnabled (proc.canRedo()); lockFxBtn->setToggleState (proc.lockFx.load(), juce::dontSendNotification);
     if (proc.getPresetName() != lastPresetName) { lastPresetName = proc.getPresetName(); repaint (R (600, 690, 590, 52)); }
     if (auto* c = choiceParam (proc.apvts, "waveform")) waveName->setButtonText (c->getCurrentChoiceName().toUpperCase());
-    {   const auto wn = proc.getWavetableName(); if (wn != lastWtName) { lastWtName = wn; wtName->setButtonText (wn.isEmpty() ? juce::String ("LOAD A WAVETABLE...") : wn.toUpperCase().substring (0, 30)); wave->repaint(); } }
+    {   const auto wn = proc.getWavetableName (wtOsc); if (wn != lastWtName) { lastWtName = wn; wtName->setButtonText (wn.isEmpty() ? juce::String ("LOAD A WAVETABLE...") : wn.toUpperCase().substring (0, 30)); wave->repaint(); } }
     const int ftIdx = (int) proc.apvts.getRawParameterValue ("filter_type")->load();
     for (int i = 0; i < 4; ++i) ftype[i]->setToggleState (i == ftIdx, juce::dontSendNotification);
     polyBtn->setToggleState (proc.apvts.getRawParameterValue ("voices")->load() > 1.5f, juce::dontSendNotification);
@@ -771,7 +784,7 @@ void RelicEditor::paint (juce::Graphics& g)
             g.setColour (parchment); ui::drawText (g, i == 0 ? "LFO 1" : "LFO 2", juce::Rectangle<float> (x0, 160, 358, 28), 22, juce::Justification::centred);
         }
         g.setColour (display); g.fillRoundedRectangle (548, 362, 724, 274, 8.0f); g.setColour (goldDim); g.drawRoundedRectangle (548, 362, 724, 274, 8.0f, 2.0f);
-        g.setColour (parchment); ui::drawText (g, "MODULATION MATRIX", juce::Rectangle<float> (548, 364, 724, 28), 22, juce::Justification::centred);
+        g.setColour (parchment); ui::drawText (g, "MODULATION MATRIX", juce::Rectangle<float> (836, 364, 436, 28), 22, juce::Justification::centred);
     }
     if (currentTab == 4)
     {
@@ -820,7 +833,8 @@ void RelicEditor::resized()
 
     // OSC tab
     wave->setBounds (R (548, 156, 724, 190));
-    noteToggles["wt_use_file"]->setBounds (R (548, 350, 110, 38)); wtPrev->setBounds (R (664, 350, 40, 38)); wtName->setBounds (R (708, 350, 330, 38)); wtNext->setBounds (R (1042, 350, 40, 38)); wtLoad->setBounds (R (1086, 350, 186, 38)); env->setBounds (R (548, 394, 360, 82)); meter->setBounds (R (1176, 490, 92, 150));
+    wtOscBtn->setBounds (R (548, 350, 72, 38)); for (int o = 0; o < 3; ++o) noteToggles[RelicProcessor::wtToggleId (o)]->setBounds (R (624, 350, 84, 38));
+    noteToggles["wt_smooth"]->setBounds (R (712, 350, 100, 38)); wtPrev->setBounds (R (816, 350, 40, 38)); wtName->setBounds (R (860, 350, 200, 38)); wtNext->setBounds (R (1064, 350, 40, 38)); wtLoad->setBounds (R (1108, 350, 164, 38)); env->setBounds (R (548, 394, 360, 82)); meter->setBounds (R (1176, 490, 92, 150));
     const char* oscIds[6] = { "pulse_width", "osc_level", "unison_voices", "unison_detune", "unison_spread", "voices" };
     for (int i = 0; i < 6; ++i) K (oscIds[i])->setBounds (R (928 + (i % 3) * 82.0f, 396 + (i / 3) * 124.0f, 76, 118));
     const char* adsr[4] = { "attack_ms", "decay_ms", "sustain", "release_ms" };
@@ -950,7 +964,7 @@ void RelicEditor::resized()
         amountSliders[(size_t) (2 * (n - 1))]->setBounds (R (978, y + 4, 160, 50)); amountSliders[(size_t) (2 * (n - 1) + 1)]->setBounds (R (1142, y + 4, 128, 50));
     }
     noteToggles["vib_on"]->setBounds (R (1300, 700, 80, 44)); noteToggles["porta_on"]->setBounds (R (1388, 700, 80, 44));
-    K ("vib_rate_hz")->setBounds (R (1298, 752, 84, 100)); K ("vib_depth_ct")->setBounds (R (1386, 752, 84, 100)); K ("vib_delay_ms")->setBounds (R (1298, 846, 84, 92)); K ("vib_fade_ms")->setBounds (R (1386, 846, 84, 92)); K ("porta_ms")->setBounds (R (1342, 942, 84, 92));
+    K ("vib_rate_hz")->setBounds (R (1298, 752, 84, 100)); K ("vib_depth_ct")->setBounds (R (1386, 752, 84, 100)); K ("porta_ms")->setBounds (R (1342, 846, 84, 92)); vibEnvBtn->setBounds (R (1298, 948, 172, 40));
 
     // master / filter
     K ("master")->setBounds (R (1316, 106, 132, 72));
@@ -1004,25 +1018,33 @@ void RelicEditor::resized()
 }
 
 // ---- wavetable file strip ----
+void RelicEditor::updateWtStrip()
+{
+    if (wtOscBtn == nullptr) return;
+    for (int o = 0; o < 3; ++o) if (auto it = noteToggles.find (RelicProcessor::wtToggleId (o)); it != noteToggles.end()) it->second->setVisible (currentTab == 1 && o == wtOsc);
+    repaint();
+}
+
 void RelicEditor::afterWavetableLoaded()
 {
-    if (auto* q = proc.apvts.getParameter ("wt_use_file")) q->setValueNotifyingHost (1.0f);          // hear it straight away
-    if (auto* w = choiceParam (proc.apvts, "waveform")) if (w->getIndex() != 4) w->setValueNotifyingHost (w->convertTo0to1 (4.0f));   // and make the oscillator a Wavetable
+    if (auto* q = proc.apvts.getParameter (RelicProcessor::wtToggleId (wtOsc))) q->setValueNotifyingHost (1.0f);          // hear it straight away
+    const char* waveId[3] = { "waveform", "osc2_wave", "osc3_wave" };
+    if (auto* w = choiceParam (proc.apvts, waveId[wtOsc])) if (w->getIndex() != 4) w->setValueNotifyingHost (w->convertTo0to1 (4.0f));   // and make the oscillator a Wavetable
     repaint();
 }
 
 void RelicEditor::loadWavetableDialog()
 {
-    auto start = proc.getWavetableFile(); start = start.existsAsFile() ? start.getParentDirectory() : RelicProcessor::wavetablesRoot();
+    auto start = proc.getWavetableFile (wtOsc); start = start.existsAsFile() ? start.getParentDirectory() : RelicProcessor::wavetablesRoot();
     RelicProcessor::wavetablesRoot().createDirectory();
     chooser = std::make_unique<juce::FileChooser> ("Choose a wavetable (single-cycle frames end to end, 2048 samples each)", start, "*.wav;*.aif;*.aiff;*.flac");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
-    { auto f = fc.getResult(); if (f.existsAsFile() && proc.loadWavetableFile (f)) afterWavetableLoaded(); else repaint(); });
+    { auto f = fc.getResult(); if (f.existsAsFile() && proc.loadWavetableFile (f, wtOsc)) afterWavetableLoaded(); else repaint(); });
 }
 
 void RelicEditor::showWavetableMenu()
 {
-    const auto cur = proc.getWavetableFile();
+    const auto cur = proc.getWavetableFile (wtOsc);
     const auto dir = cur.existsAsFile() ? cur.getParentDirectory() : RelicProcessor::wavetablesRoot();
     const auto files = RelicProcessor::scanWavetables (dir);
     juce::PopupMenu m; m.addSectionHeader ("WAVETABLES  (" + dir.getFullPathName() + ")");
@@ -1032,8 +1054,8 @@ void RelicEditor::showWavetableMenu()
     m.showMenuAsync (juce::PopupMenu::Options(), [this, files, dir] (int r)
     {
         if (r == 2) { dir.createDirectory(); dir.revealToUser(); }
-        else if (r == 3) { proc.clearWavetable(); if (auto* q = proc.apvts.getParameter ("wt_use_file")) q->setValueNotifyingHost (0.0f); repaint(); }
-        else if (r >= 1000 && r - 1000 < (int) files.size() && proc.loadWavetableFile (files[(size_t) (r - 1000)])) afterWavetableLoaded();
+        else if (r == 3) { proc.clearWavetable (wtOsc); if (auto* q = proc.apvts.getParameter (RelicProcessor::wtToggleId (wtOsc))) q->setValueNotifyingHost (0.0f); repaint(); }
+        else if (r >= 1000 && r - 1000 < (int) files.size() && proc.loadWavetableFile (files[(size_t) (r - 1000)], wtOsc)) afterWavetableLoaded();
     });
 }
 

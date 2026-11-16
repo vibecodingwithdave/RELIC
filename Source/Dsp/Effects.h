@@ -27,7 +27,7 @@ struct Lfo
 // gain = 1 - depth * (0.5 + 0.5 sin): depth 1.0 reaches silence
 struct Tremolo
 {
-    Lfo lfo;
+    Lfo lfo; void lockPhase (double p) { lfo.phase = p; }
     inline void process (float& l, float& r, float rateHz, float depth, double sr)
     {
         const float m = 0.5f + 0.5f * lfo.next (rateHz, sr, Lfo::Sine);
@@ -39,7 +39,7 @@ struct Tremolo
 // depth 1.0 sweeps hard left to hard right
 struct Panner
 {
-    Lfo lfo;
+    Lfo lfo; void lockPhase (double p) { lfo.phase = p; }
     inline void process (float& l, float& r, float rateHz, float depth, int shape, double sr)
     {
         const float p = depth * lfo.next (rateHz, sr, shape);          // -1..+1
@@ -186,7 +186,7 @@ struct Chorus
         l = l * (1.0f - mix) + wl * (1.0f / 3.0f) * mix;
         r = r * (1.0f - mix) + wr * (1.0f / 3.0f) * mix;
     }
-    DelayLine line[2]; double phase = 0.0;
+    DelayLine line[2]; double phase = 0.0; void lockPhase (double p) { phase = p; }
 };
 
 // Flanger: 0.5 ms plus up to 6 ms swept by the LFO, with feedback of either sign.
@@ -203,7 +203,7 @@ struct Flanger
         line[0].advance(); line[1].advance();
         l = l * (1.0f - mix) + wl * mix; r = r * (1.0f - mix) + wr * mix;
     }
-    DelayLine line[2]; double phase = 0.0;
+    DelayLine line[2]; double phase = 0.0; void lockPhase (double p) { phase = p; }
 };
 
 // Reverb: eight damped feedback combs and four allpasses per side (Schroeder/Freeverb layout).
@@ -360,7 +360,7 @@ struct Wah
         const float wl = sv[0].process (l, Svf::BandPass) * 1.5f, wr = sv[1].process (r, Svf::BandPass) * 1.5f;
         l = l * (1.0f - mix) + wl * mix; r = r * (1.0f - mix) + wr * mix;
     }
-    Svf sv[2]; double phase = 0.0; float env = 0.0f, pos = 0.5f; unsigned count = 0;
+    Svf sv[2]; double phase = 0.0; void lockPhase (double p) { phase = p; } float env = 0.0f, pos = 0.5f; unsigned count = 0;
 };
 
 // Lo-fi: band-limit (60 Hz up to the tone), wow, hiss and crackle. The dry path is delayed to match.

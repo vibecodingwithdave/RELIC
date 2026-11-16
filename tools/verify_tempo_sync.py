@@ -12,10 +12,12 @@ with tempfile.TemporaryDirectory() as tmp:
     binary = str(Path(tmp) / 'dsp_ts')
     subprocess.run(['clang++', '-std=c++17', '-O1', str(ROOT / 'tools/dsp_tempo_sync_test.cpp'), '-o', binary], check=True)
     r = subprocess.run([binary], capture_output=True, text=True); print(r.stdout.strip()); check('DSP harness: all exact checks pass', r.returncode == 0)
+    binary = str(Path(tmp) / 'dsp_bl'); subprocess.run(['clang++', '-std=c++17', '-O1', str(ROOT / 'tools/dsp_bar_lock_test.cpp'), '-o', binary], check=True)
+    r = subprocess.run([binary], capture_output=True, text=True); print(r.stdout.strip()); check('Bar lock harness: synced effects follow the host position exactly, across tempo changes', r.returncode == 0)
 IDX = {'1/1': 1, '1/2': 2, '1/4': 3, '1/8': 4, '1/16': 5, '1/32': 6, '1/2T': 7, '1/4T': 8, '1/8T': 9, '1/16T': 10, '1/2D': 11, '1/4D': 12, '1/8D': 13, '1/16D': 14, '2/1': 15, '4/1': 16}
 BEATS = {'1/1': 4, '1/2': 2, '1/4': 1, '1/8': .5, '1/16': .25, '1/32': .125, '1/2T': 4 / 3, '1/4T': 2 / 3, '1/8T': 1 / 3, '1/16T': 1 / 6, '1/2D': 3, '1/4D': 1.5, '1/8D': .75, '1/16D': .375, '2/1': 8, '4/1': 16}
 BASE = dict(waveform=0, osc_level=0.4, unison_voices=1, synth_mix=1, filter_on=0, master=1.0, attack_ms=1, decay_ms=0, sustain=1, release_ms=30, voices=4, chord_on=0, arp_on=0, chop_on=0,
-            osc2_on=0, osc3_on=0, trem_on=0, pan_on=0, chorus_on=0, flanger_on=0, wah_on=0, delay_on=0, pdelay_on=0, vib_on=0)
+            osc2_on=0, osc3_on=0, talk_on=0, trem_on=0, pan_on=0, chorus_on=0, flanger_on=0, wah_on=0, delay_on=0, pdelay_on=0, vib_on=0)
 def plugin(params=None, drop=None):
     P = load_plugin(PATH); P.raw_state = edit_state(P.raw_state, {**BASE, **(params or {})}, None, None, drop); P.reset(); return P
 def render(params=None, notes=((69, 0.0, 2.2),), dur=2.6, drop=None):
@@ -24,13 +26,14 @@ def render(params=None, notes=((69, 0.0, 2.2),), dur=2.6, drop=None):
     return plugin(params, drop)(ev, duration=dur, sample_rate=SR, num_channels=2)
 def mono(x): return x.mean(axis=0)
 P0 = load_plugin(PATH)
-check('defaults: every sync is Free, vibrato delay and fade are 0', all(str(getattr(P0, f'{e}_sync')) == 'Free' for e in ('trem', 'pan', 'chorus', 'flanger', 'wah', 'vib', 'delay', 'pdelay')) and P0.vibrato_delay_ms == 0 and P0.vibrato_fade_in_ms == 0)
+check('defaults: every sync is Free, vibrato delay and fade are 0', all(str(getattr(P0, f'{e}_sync')) == 'Free' for e in ('trem', 'pan', 'chorus', 'flanger', 'wah', 'vib', 'delay', 'pdelay', 'talk')) and P0.vibrato_delay_ms == 0 and P0.vibrato_fade_in_ms == 0)
 
 # ---- equivalence: a synced effect is the same effect with the knob set to that note value's rate (120 BPM: 1 beat = 0.5 s)
 FX = [('trem', dict(trem_on=1, trem_depth=1.0), 'trem_rate_hz', 'hz'), ('pan', dict(pan_on=1, pan_depth=1.0), 'pan_rate_hz', 'hz'), ('chorus', dict(chorus_on=1, chorus_depth=0.8, chorus_mix=0.6), 'chorus_rate_hz', 'hz'),
       ('flanger', dict(flanger_on=1, flanger_depth=0.8, flanger_mix=0.6), 'flanger_rate_hz', 'hz'), ('wah', dict(wah_on=1, wah_mode=0, wah_depth=1.0, wah_mix=1.0), 'wah_rate_hz', 'hz'),
+      ('talk', dict(talk_on=1, talk_mix=0.8, talk_depth=1.0, talk_vowel=0.4), 'talk_rate_hz', 'hz'),
       ('delay', dict(delay_on=1, delay_mix=0.5, delay_feedback=0.3), 'delay_time_ms', 'ms'), ('pdelay', dict(pdelay_on=1, pdelay_mix=0.5, pdelay_feedback=0.3, pdelay_semi=7), 'pdelay_time_ms', 'ms')]
-HZ_MAX = dict(trem=20, pan=12, chorus=5, flanger=5, wah=8)
+HZ_MAX = dict(trem=20, pan=12, chorus=5, flanger=5, wah=8, talk=8)
 for name, base, knob, kind in FX:
     for nv in ('1/4', '1/8'):
         beats = BEATS[nv]; value = (1 / (beats * 0.5)) if kind == 'hz' else beats * 500.0

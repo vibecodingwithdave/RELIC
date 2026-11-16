@@ -229,11 +229,14 @@ public:
         const float y0 = tb[i], y1 = tb[i + 1], y2 = tb[i + 2], y3 = tb[i + 3];
         return y1 + 0.5f * f * (y2 - y0 + f * (2.f * y0 - 5.f * y1 + 4.f * y2 - y3 + f * (3.f * (y1 - y2) + y3 - y0)));
     }
-    inline float lookupUserMorph (const UserBank& u, double pos01, int band, double phase) const
+    // pos01 sweeps the frames. smooth: a cubic (Catmull-Rom) blend across four neighbouring frames, so the morph has no corner at each frame; otherwise a linear blend of two.
+    inline float lookupUserMorph (const UserBank& u, double pos01, int band, double phase, bool smooth = false) const
     {
         if (u.frames < 2) return lookupUser (u, 0, band, phase);
         const double x = std::min (1.0, std::max (0.0, pos01)) * (u.frames - 1); const int i = std::min (u.frames - 2, (int) x); const float f = (float) (x - i);
-        return lookupUser (u, i, band, phase) * (1.0f - f) + lookupUser (u, i + 1, band, phase) * f;
+        if (! smooth || u.frames < 3) return lookupUser (u, i, band, phase) * (1.0f - f) + lookupUser (u, i + 1, band, phase) * f;
+        const float y0 = lookupUser (u, std::max (0, i - 1), band, phase), y1 = lookupUser (u, i, band, phase), y2 = lookupUser (u, i + 1, band, phase), y3 = lookupUser (u, std::min (u.frames - 1, i + 2), band, phase);
+        return y1 + 0.5f * f * (y2 - y0 + f * (2.f * y0 - 5.f * y1 + 4.f * y2 - y3 + f * (3.f * (y1 - y2) + y3 - y0)));
     }
 
     static int bandFor (double hz)

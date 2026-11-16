@@ -99,6 +99,22 @@ int main()
         check ("sample rate: a lower rate keeps fewer harmonics in the top band", harm (*a, 0, 5, 20) < 1e-4 && harm (*c, 0, 5, 20) > 0.003);
         check ("sample rate: both banks are still built", lo && hi && lo->sampleRate == 22050 && hi->sampleRate == 96000);
     }
+    {   // smooth (cubic) morph across four frames
+        std::vector<float> d; for (int k = 1; k <= 5; ++k) append (d, cycle (2048, k, 0.5));
+        auto b = WaveTables::buildUser (d, 0, sr); const double ph = 0.1;
+        auto lin = [&] (double x) { return wt.lookupUserMorph (*b, x, 4, ph, false); }; auto smo = [&] (double x) { return wt.lookupUserMorph (*b, x, 4, ph, true); };
+        bool atFrames = true; for (int f = 0; f < 5; ++f) atFrames = atFrames && std::abs (smo (f / 4.0) - wt.lookupUser (*b, f, 4, ph)) < 1e-6;
+        check ("smooth morph: passes exactly through every frame", atFrames);
+        check ("smooth morph: differs from the linear blend between frames", std::abs (smo (0.375) - lin (0.375)) > 0.01);
+        check ("smooth morph off (default argument): the linear blend", std::abs (wt.lookupUserMorph (*b, 0.375, 4, ph) - lin (0.375)) < 1e-9);
+        const double knot = 0.5, e = 1e-4; auto slope = [&] (auto fn, double a, double c) { return (fn (c) - fn (a)) / (c - a); };
+        const double ls = slope (lin, knot - 3 * e, knot - e) - slope (lin, knot + e, knot + 3 * e), ss = slope (smo, knot - 3 * e, knot - e) - slope (smo, knot + e, knot + 3 * e);
+        check ("smooth morph: no corner at a frame (the slope matches on both sides), unlike linear", std::abs (ss) < 0.02 && std::abs (ls) > 0.2);
+        bool bounded = true; for (int i = 0; i <= 400; ++i) bounded = bounded && std::abs (smo (i / 400.0)) < 3.0f; check ("smooth morph: stays bounded over the whole sweep", bounded);
+        auto two = WaveTables::buildUser ([&] { std::vector<float> t; append (t, cycle (2048, 1, 0.5)); append (t, cycle (2048, 2, 0.5)); return t; }(), 0, sr);
+        check ("smooth morph: with two frames it is the linear blend", std::abs (wt.lookupUserMorph (*two, 0.3, 4, ph, true) - wt.lookupUserMorph (*two, 0.3, 4, ph, false)) < 1e-9);
+        auto one = WaveTables::buildUser (cycle (2048, 1, 0.5), 0, sr); check ("smooth morph: a one-frame table is unaffected", std::abs (wt.lookupUserMorph (*one, 0.7, 4, ph, true) - wt.lookupUser (*one, 0, 4, ph)) < 1e-9);
+    }
     std::printf ("%d of %d checks passed\n", passed, total);
     return passed == total ? 0 : 1;
 }
