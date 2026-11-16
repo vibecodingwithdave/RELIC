@@ -886,9 +886,9 @@ public:
         }
         if (pos.empty()) pos = { 0 };
         const int steps = 16; auto area = getLocalBounds().toFloat().reduced (18.0f, 20.0f); area.removeFromTop (area.getHeight() * 0.16f);
-        static const char* rates[] = { "1/1", "1/2", "1/2D", "1/2T", "1/4", "1/4D", "1/4T", "1/8", "1/8D", "1/8T", "1/16", "1/16D", "1/16T", "1/32" }; static const char* modes[] = { "UP", "DOWN", "UP-DOWN", "DOWN-UP", "RANDOM", "PLAYED", "CHORD", "WATERFALL" };
+        static const char* rates[] = { "1/1", "1/2", "1/2D", "1/2T", "1/4", "1/4D", "1/4T", "1/8", "1/8D", "1/8T", "1/16", "1/16D", "1/16T", "1/32" }; static const char* modes[] = { "UP", "DOWN", "UP-DOWN", "DOWN-UP", "RANDOM", "PLAYED", "CHORD", "WATERFALL", "CUSTOM" };
         g.setColour (lime.withAlpha (s.arpOn ? 0.85f : 0.4f));
-        drawText (g, juce::String (modes[juce::jlimit (0, 7, s.mode)]) + "   " + rates[juce::jlimit (0, 13, s.grouping != 0 && s.mode == 7 ? 10 : s.rate)] + "   " + juce::String (s.octaves) + " OCT" + (! s.arpOn ? "   (ARP OFF)" : ! s.run && proc.arpWaitingShown.load() ? "   (STOP)" : ""),
+        drawText (g, juce::String (modes[juce::jlimit (0, 8, s.mode)]) + "   " + rates[juce::jlimit (0, 13, s.grouping != 0 && s.mode == 7 ? 10 : s.rate)] + "   " + juce::String (s.octaves) + " OCT" + (! s.arpOn ? "   (ARP OFF)" : ! s.run && proc.arpWaitingShown.load() ? "   (STOP)" : ""),
                   juce::Rectangle<float> (18.0f, 8.0f, (float) getWidth() - 36.0f, (float) getHeight() * 0.14f), (float) getHeight() * 0.09f, juce::Justification::left);
         const float cw = area.getWidth() / steps;
         for (int i = 0; i < steps; ++i)
@@ -995,6 +995,80 @@ private:
     }
 };
 
+// CUSTOM arp pattern: up to 64 steps in four bars of 16. Drag a bar up or down to choose the note number of that step (0 = lowest held note, 1 = the next, past the last
+// one it continues an octave up; below 0 it goes down). Right-click: length and reset.
+class PatternLane : public Display
+{
+public:
+    PatternLane (RelicProcessor& p) : Display (p)
+    {
+        setTooltip ("Custom pattern: drag a bar to set the note number of that step (0 = lowest held note). Click BAR 1-4 to change page. Right-click: length and reset.");
+    }
+    void paint (juce::Graphics& g) override
+    {
+        paintFrame (g); const auto s = proc.readChordArp(); const int len = juce::jlimit (1, 64, s.patLength);
+        const int hot = proc.arpStepShown.load() - 1;
+        g.setColour (lime.withAlpha (0.85f)); drawText (g, "CUSTOM PATTERN   " + juce::String (len) + " STEPS", juce::Rectangle<float> (18.0f, 8.0f, 300.0f, 14.0f), 11, juce::Justification::left);
+        for (int b = 0; b < 4; ++b)
+        {
+            auto t = tabBounds (b); g.setColour (b == page ? gold : goldDim); g.drawRoundedRectangle (t, 3, 1.2f);
+            g.setColour (parchment.withAlpha (b * 16 < len ? 0.9f : 0.3f)); drawText (g, "BAR " + juce::String (b + 1), t, 10, juce::Justification::centred);
+        }
+        const auto area = laneArea(); g.setColour (lime.withAlpha (0.25f)); g.drawHorizontalLine ((int) (area.getY() + area.getHeight() * 0.5f), area.getX(), area.getRight());
+        for (int i = 0; i < 16; ++i)
+        {
+            const int idx = page * 16 + i; auto c = cellBounds (i); const bool on = idx < len;
+            g.setColour (lime.withAlpha (on ? 0.12f : 0.03f)); g.fillRoundedRectangle (c, 3);
+            if (! on) continue;
+            const int d = s.pattern[(size_t) idx]; const float mid = c.getCentreY(), y = c.getY() + c.getHeight() * (12 - d) / 24.0f;
+            g.setColour (lime.withAlpha (s.arpOn && s.mode == 8 ? 0.8f : 0.4f)); g.fillRect (juce::Rectangle<float> (c.getX() + 4, juce::jmin (mid, y), c.getWidth() - 8, juce::jmax (2.0f, std::abs (y - mid))));
+            if (s.arpOn && s.mode == 8 && hot >= 0 && hot % len == idx) { g.setColour (gold); g.drawRoundedRectangle (c, 3, 1.5f); }
+            g.setColour (parchment.withAlpha (0.85f)); drawText (g, juce::String (d), c.withHeight (12.0f).withY (c.getY() + 1), 9, juce::Justification::centred);
+        }
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu())
+        {
+            juce::PopupMenu menu; const auto s = proc.readChordArp();
+            for (int n : { 4, 8, 12, 16, 24, 32, 48, 64 }) menu.addItem (n, juce::String (n) + " steps", true, n == s.patLength);
+            menu.addSeparator(); menu.addItem (100, "Reset: 0 1 2 3 4 5 6 7 ..."); menu.addItem (101, "Clear: every step on the lowest note");
+            auto safe = juce::Component::SafePointer<PatternLane> (this);
+            menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
+            {
+                if (safe == nullptr) return;
+                if (r >= 1 && r <= 64) safe->set ("arp_pat_length", (float) r);
+                if (r == 100) for (int i = 0; i < 64; ++i) safe->set ("arp_pat_" + juce::String (i + 1), (float) (i % 8));
+                if (r == 101) for (int i = 0; i < 64; ++i) safe->set ("arp_pat_" + juce::String (i + 1), 0.0f);
+            });
+            return;
+        }
+        for (int b = 0; b < 4; ++b) if (tabBounds (b).contains (e.position)) { page = b; repaint(); return; }
+        grab (e);
+    }
+    void mouseDrag (const juce::MouseEvent& e) override { grab (e); }
+    void mouseUp (const juce::MouseEvent&) override { if (gesture != nullptr) { gesture->endChangeGesture(); gesture = nullptr; } }
+private:
+    int page = 0; juce::RangedAudioParameter* gesture = nullptr;
+    juce::Rectangle<float> laneArea() const { auto b = getLocalBounds().toFloat().reduced (12, 4); b.removeFromTop (22); return b; }
+    juce::Rectangle<float> tabBounds (int b) const { return { (float) getWidth() - 12.0f - 4 * 52.0f + (float) b * 52.0f, 6.0f, 48.0f, 16.0f }; }
+    juce::Rectangle<float> cellBounds (int i) const { const auto a = laneArea(); const float w = a.getWidth() / 16; return { a.getX() + w * i + 1, a.getY(), w - 2, a.getHeight() }; }
+    void grab (const juce::MouseEvent& e)
+    {
+        const int len = juce::jlimit (1, 64, proc.readChordArp().patLength);
+        for (int i = 0; i < 16; ++i)
+        {
+            const int idx = page * 16 + i; auto c = cellBounds (i);
+            if (idx >= len || e.position.x < c.getX() || e.position.x >= c.getRight() + 1) continue;
+            auto* p = proc.apvts.getParameter ("arp_pat_" + juce::String (idx + 1));
+            if (gesture != p) { if (gesture != nullptr) gesture->endChangeGesture(); gesture = p; p->beginChangeGesture(); }
+            const int d = juce::jlimit (-12, 12, (int) std::lround (12.0f - 24.0f * (e.position.y - c.getY()) / c.getHeight()));
+            p->setValueNotifyingHost (p->convertTo0to1 ((float) d)); repaint(); return;
+        }
+    }
+    void set (const juce::String& key, float value) { auto* p = proc.apvts.getParameter (key); p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (value)); p->endChangeGesture(); repaint(); }
+};
+
 // Horizontal slider for a signed amount: name on the left, value on the right.
 class AmountSlider : public juce::Component, public juce::SettableTooltipClient
 {
@@ -1075,6 +1149,7 @@ private:
     // TEXTURE tab: grains page or own-file page
     int texView = 0; std::unique_ptr<ui::StoneButton> texViewBtn[2], loadTex; std::vector<juce::Component*> texGrains, texShape, texOwnOnly;
     void updateTextureView();
+    void updateArpView();
     // MOD tab: slots 1-4 or 5-8
     int modPage = 0; std::unique_ptr<ui::StoneButton> modPageBtn[2]; void updateModView();
 
@@ -1102,7 +1177,7 @@ private:
     std::unique_ptr<ui::StoneButton> panShape;
 
     // CHORDS and ARP tabs
-    std::unique_ptr<ui::ChordDisplay> chordDisp; std::unique_ptr<ui::ArpDisplay> arpDisp; std::unique_ptr<ui::RhythmLane> rhythmLane;
+    std::unique_ptr<ui::ChordDisplay> chordDisp; std::unique_ptr<ui::ArpDisplay> arpDisp; std::unique_ptr<ui::RhythmLane> rhythmLane; std::unique_ptr<ui::PatternLane> patternLane;
     std::map<juce::String, std::unique_ptr<ui::Stepper>> steppers;
     std::map<juce::String, std::unique_ptr<ui::StoneButton>> noteToggles; std::vector<std::unique_ptr<juce::ButtonParameterAttachment>> noteAtts;
     ui::Stepper* addStepper (const char* id, const char* name, std::vector<juce::Component*>& group);

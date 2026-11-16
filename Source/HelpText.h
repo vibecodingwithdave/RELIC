@@ -14,6 +14,7 @@ inline juce::String familyKey (juce::String id)
     if (id.startsWith ("osc3_")) return "osc2_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("lfo2_")) return "lfo1_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("menv2_")) return "menv1_" + id.fromFirstOccurrenceOf ("_", false, false);
+    if (id.startsWith ("arp_pat_") && id != "arp_pat_length") return "arp_pat_1";
     if (id.length() > 5 && id.startsWith ("mod") && id[3] >= '2' && id[3] <= '8' && id[4] == '_') return "mod1_" + id.substring (5);
     return id;
 }
@@ -230,7 +231,9 @@ inline const Table& params()
         // arp
         { "arp_on", "Arpeggiator: plays the held notes (or chord) one after another." },
         { "arp_div", "Rate: the length of each arp step. Triplet (T) and dotted (D) lengths are included." },
-        { "arp_mode", "Pattern: Up, Down, Up-Down, Down-Up, Random, Played, Chord, or Waterfall (overlapping notes that cascade up and mirror down)." },
+        { "arp_mode", "Pattern: Up, Down, Up-Down, Down-Up, Random, Played, Chord, Waterfall (overlapping notes that cascade up and mirror down), or Custom (a pattern of up to 64 steps that you draw)." },
+        { "arp_pat_length", "How many steps the Custom pattern has, from 1 to 64 (four bars of 16). Right-click the pattern to change it." },
+        { "arp_pat_1", "The note number of this Custom pattern step: 0 is the lowest held note, 1 the next, and past the last one it continues an octave up. Negative numbers go down." },
         { "arp_octaves", "How many octaves the arp covers." },
         { "arp_order", "The order the held notes are taken in: by pitch, as played, converging, diverging or random." },
         { "arp_grouping", "Phrases the line into groups (such as 5-5-6) and restarts the pattern at the start of each group." },

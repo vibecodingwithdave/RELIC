@@ -258,7 +258,7 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     toggle ("arp_run", "Arp Run", true);
     choice ("arp_div", "Arp Division", { "1/1", "1/2", "1/2D", "1/2T", "1/4", "1/4D", "1/4T", "1/8", "1/8D", "1/8T", "1/16", "1/16D", "1/16T", "1/32" }, 10);
     choice ("arp_order", "Arp Order", { "Pitch", "As Played", "Converge", "Diverge", "Random" }, 0);
-    choice ("arp_mode", "Arp Mode", { "Up", "Down", "Up-Down", "Down-Up", "Random", "Played", "Chord", "Waterfall" }, 0);
+    choice ("arp_mode", "Arp Mode", { "Up", "Down", "Up-Down", "Down-Up", "Random", "Played", "Chord", "Waterfall", "Custom" }, 0);
     choice ("arp_wshape", "Arp Waterfall Shape", { "Cascade", "Spiral", "Geyser", "Twin", "Tide", "Climb" }, 0);
     choice ("arp_grouping", "Arp Grouping", { "Pattern", "5-5-6", "7-7-2", "3-3-3-3-4", "4-4-4-4" }, 0);
     integer ("arp_octaves", "Arp Octaves", 1, 4, 1);
@@ -276,6 +276,8 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
         choice (id + "_type", "Arp Rhythm " + juce::String (i) + " Type", { "Hit", "Rest", "Tie" }, 0);
         flt (id + "_velocity", "Arp Rhythm " + juce::String (i) + " Velocity", 0.0f, 1.0f, 1.0f);
     }
+    integer ("arp_pat_length", "Arp Pattern Length", 1, 64, 16);
+    for (int i = 1; i <= 64; ++i) integer ("arp_pat_" + juce::String (i), "Arp Pattern Step " + juce::String (i), -12, 12, (i - 1) % 8);   // Custom mode: note number of each step
     // Master
     flt ("master", "Master", 0.0f, 2.0f, 0.8f);
     return { v.begin(), v.end() };
@@ -483,6 +485,7 @@ RelicProcessor::RelicProcessor()
         rhythmTypes[(size_t) i] = apvts.getRawParameterValue (id + "_type");
         rhythmVelocities[(size_t) i] = apvts.getRawParameterValue (id + "_velocity");
     }
+    for (int i = 0; i < 64; ++i) patSteps[(size_t) i] = apvts.getRawParameterValue ("arp_pat_" + juce::String (i + 1));
     installFactoryPresets();
 }
 
@@ -533,6 +536,7 @@ rf::ChordArpSettings RelicProcessor::readChordArp() const
         c.rhythm[(size_t) i].type = (int) rhythmTypes[(size_t) i]->load();
         c.rhythm[(size_t) i].velocity = rhythmVelocities[(size_t) i]->load();
     }
+    c.patLength = (int) v ("arp_pat_length"); for (int i = 0; i < 64; ++i) c.pattern[(size_t) i] = (int) patSteps[(size_t) i]->load();
     c.octaves = (int) v ("arp_octaves"); c.gate = v ("arp_gate"); c.swing = v ("arp_swing"); c.human = v ("arp_human");
     return c;
 }
@@ -1136,6 +1140,13 @@ void RelicProcessor::setStateInformation (const void* data, int size)
                 const auto id = "arp_rhythm_" + juce::String (i);
                 rhythmDefault (id + "_type", 0); rhythmDefault (id + "_velocity", 1);
             }
+            // Any parameter this project does not mention (it predates it) takes its default, even when loaded over an edited instance.
+            for (auto* prm : getParameters())
+                if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (prm))
+                {
+                    const auto pid = rp->getParameterID();
+                    if (! state.getChildWithProperty ("id", pid).isValid()) rhythmDefault (pid, rp->convertFrom0to1 (rp->getDefaultValue()));
+                }
             apvts.replaceState (state);
             const auto path = apvts.state.getProperty ("samplePath").toString();
             if (path.isNotEmpty()) { juce::File f (path); if (f.existsAsFile()) loadSampleFile (f, false); else sampleError = "Sample not found: " + f.getFileName(); }
