@@ -8,7 +8,7 @@ PATH = str(ROOT / 'build/Relic_artefacts/Release/VST3/Relic.vst3'); SR = 44100; 
 def check(name, ok, note=''): rows.append(bool(ok)); print(f"  [{'PASS' if ok else 'FAIL'}] {name} {note}", flush=True)
 BASE = dict(waveform=0, osc_level=0.4, unison_voices=1, synth_mix=1, filter_on=0, master=1.0, attack_ms=1, decay_ms=0, sustain=1, release_ms=60, voices=4, chord_on=0, arp_on=0, chop_on=0,
             osc2_on=0, osc3_on=0, vib_on=1, vib_depth_ct=60.0, vib_rate_hz=5.0)
-NEW = ['vib_decay_ms', 'vib_sustain', 'vib_vel', 'vib_wheel']
+NEW = ['vib_decay_ms', 'vib_sustain', 'vib_vel', 'vib_wheel', 'vib_release_ms']
 def render(params=None, notes=((69, 0.0, 2.6, 120),), dur=3.0, drop=None, cc=None):
     P = load_plugin(PATH); P.raw_state = edit_state(P.raw_state, {**BASE, **(params or {})}, None, None, drop); P.reset(); ev = []
     if cc is not None: ev.append((bytes([0xB0, 1, cc]), 0.0))
@@ -40,6 +40,15 @@ w0 = swing(dev(render({'vib_depth_ct': 0.0, 'vib_wheel': 1.0}, cc=0)), 0.3, 1.5)
 check('mod wheel: with no vibrato depth the wheel adds up to a semitone each way', w0 < 6 and 170 < w1 < 230 and 80 < w5 < 120, f'(wheel 0: {w0:.0f}, wheel full: {w1:.0f}, half amount: {w5:.0f} ct)')
 w = swing(dev(render({'vib_depth_ct': 60.0, 'vib_wheel': 1.0}, cc=127)), 0.3, 1.5); check('the wheel adds to the V.Depth setting (60 ct + 100 ct each way)', 290 < w < 340, f'({w:.0f} ct)')
 w = swing(dev(render({'vib_depth_ct': 60.0, 'vib_wheel': 0.0}, cc=127)), 0.3, 1.5); check('with the wheel amount at 0 the wheel does nothing', abs(w - full) < 12)
+print('== RELEASE ==')
+R = {'release_ms': 1500}
+n1 = ((69, 0.0, 1.0, 120),)
+d = dev(render({'release_ms': 1500, 'vib_release_ms': 0.0}, notes=n1, dur=3.0)); check('release 0 (default): the vibrato carries on through the voice release as before', swing(d, 1.2, 1.9) > 90, f'({swing(d, 1.2, 1.9):.0f} ct)')
+d = dev(render({'release_ms': 1500, 'vib_release_ms': 300.0}, notes=n1, dur=3.0)); a, b, c = swing(d, 0.4, 0.9), swing(d, 1.0, 1.15), swing(d, 1.5, 2.2)
+check('release 300 ms: full while held, gone soon after the key is let go, though the voice still rings', a > 90 and b > c and c < 12, f'({a:.0f}, {b:.0f}, {c:.1f} ct)')
+d = dev(render({'release_ms': 1500, 'vib_release_ms': 1200.0}, notes=n1, dur=3.0)); b, c = swing(d, 1.0, 1.3), swing(d, 2.0, 2.4)
+check('release 1200 ms: eases away slowly (still audible early, nearly gone by the end)', b > 40 and c < 0.5 * b, f'({b:.0f} -> {c:.0f} ct)')
+d = dev(render({'vib_release_ms': 400.0, 'vib_delay_ms': 200.0, 'vib_fade_ms': 300.0}, notes=((69, 0.0, 0.1, 120),), dur=1.5)); check('a note released before its vibrato began stays steady (no swing while it rings)', swing(d, 0.03, 0.14) < 10, f'({swing(d, 0.03, 0.14):.1f} ct)')
 print('== STATE ==')
 Pa = load_plugin(PATH); Pa.raw_state = edit_state(Pa.raw_state, {'vib_decay_ms': 1234.0, 'vib_sustain': 0.33, 'vib_vel': 0.7, 'vib_wheel': 0.4}); Pb = load_plugin(PATH); Pb.raw_state = Pa.raw_state
 check('the new settings survive a save and restore', abs(Pb.vibrato_decay_ms - 1234) < 1 and abs(Pb.vibrato_sustain - 0.33) < 0.01 and abs(Pb.vibrato_velocity - 0.7) < 0.01 and abs(Pb.vibrato_wheel - 0.4) < 0.01)

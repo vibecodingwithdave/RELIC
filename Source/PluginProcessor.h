@@ -130,7 +130,7 @@ private:
     {
         bool active = false;
         int note = -1; float velocity = 0.0f; unsigned long long age = 0;
-        double vibPh = 0.0; unsigned long long vibAge = 0;   // this note's own vibrato phase and age in samples (used when the vibrato has a delay or fade-in)
+        double vibPh = 0.0; unsigned long long vibAge = 0, vibRelAge = 0;   // this note's own vibrato phase and age in samples (used when the vibrato has a delay or fade-in)
         double phase[7] {}; double phaseX[2] {};   // phaseX: oscillators 2 and 3
         double samplePos = 0.0; bool sampleActive = false;
         double samplePosB = 0.0; bool sampleActiveB = false;   // slot B when it plays as its own layer
@@ -185,7 +185,9 @@ private:
     Snap snapshot() const; void applySnap (const Snap&); void flushPending();
     std::vector<Snap> undoS, redoS; Snap cur, pending; int quiet = 0; juce::Random rng;
     std::array<std::atomic<float>*, 16> rhythmTypes {}, rhythmVelocities {}; std::array<std::atomic<float>*, 64> patSteps {}; std::array<std::atomic<float>*, 7> degShapes {};
+    std::array<std::atomic<float>*, 64> evMask {}, evLen {}, evVel {};      // Events mode, one per step
     std::array<std::atomic<float>*, 15> chopPts {};
+    std::array<std::array<std::atomic<float>*, 32>, 2> lfoPts {};      // the drawn LFO cycles (rf::kLfoPts points each)
     std::array<std::atomic<float>*, 16> kitSlice {}, kitPitch {}, kitRev {}, kitLevel {}, kitChoke {};
     std::atomic<float>* p (const char* id) const { return apvts.getRawParameterValue (id); }
 

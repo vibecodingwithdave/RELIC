@@ -16,6 +16,7 @@ inline juce::String familyKey (juce::String id)
     if (id.startsWith ("menv2_")) return "menv1_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("chord_deg_")) return "chord_deg_1_shape";
     if (id.startsWith ("arp_pat_") && id != "arp_pat_length") return "arp_pat_1";
+    if (id.startsWith ("arp_ev_") && id != "arp_ev_length") return "arp_ev_1_" + id.fromLastOccurrenceOf ("_", false, false);
     if (id.length() > 5 && id.startsWith ("mod") && id[3] >= '2' && id[3] <= '8' && id[4] == '_') return "mod1_" + id.substring (5);
     return id;
 }
@@ -43,6 +44,7 @@ inline const Table& params()
         { "vib_decay_ms", "Vibrato decay: after the fade-in, the vibrato settles from full depth to the sustain level over this long." },
         { "vib_sustain", "Vibrato sustain: the depth the vibrato settles to, as a fraction of V.Depth." },
         { "vib_vel", "Vibrato velocity: how much a softer note's vibrato is reduced. 0 ignores velocity." },
+        { "vib_release_ms", "Vibrato release: after the key is let go the vibrato fades out over this long. 0 lets it carry on until the voice ends." },
         { "vib_wheel", "Vibrato mod wheel: the mod wheel adds up to this many semitones of vibrato depth." },
         { "vib_delay_ms", "Vibrato delay: each note holds its pitch steady for this long before the vibrato starts. 0 with Fade 0 is the plain vibrato on every note." },
         { "vib_fade_ms", "Vibrato fade-in: after the delay, the vibrato grows from nothing to full depth over this long." },
@@ -154,6 +156,12 @@ inline const Table& params()
         { "tape_on", "Tape: turns the tape saturation on or off. Settings are on the FX 3 tab." },
         { "tape_drive", "How hard the sound is pushed into the tape. More drive is warmer and more distorted." },
         { "tape_tone", "Brightness of the tape sound." },
+        { "tape_type", "Distortion shape: Tape (the original soft saturation), Soft Clip, Hard Clip, Fold (the wave folds back on itself), Tube (with Bias, adds even harmonics), Diode (one side clips harder) or Rectify (octave-up grit). Open it with SHAPE..." },
+        { "tape_band", "Which part of the sound is distorted: the whole signal, or only the low, mid or high band. The split frequencies are set below." },
+        { "tape_bias", "Makes Tube and Diode lopsided, which adds even harmonics. 0 keeps them even." },
+        { "tape_mix", "How much of the distorted sound is heard against the clean sound." },
+        { "tape_lo_hz", "The frequency between the low and mid bands." },
+        { "tape_hi_hz", "The frequency between the mid and high bands." },
         { "tape_wobble", "Slow pitch wobble, like a worn tape." },
         { "widener_on", "Stereo widener: turns it on or off. Settings are on the FX 3 tab." },
         { "widener_width", "Stereo width: 0 is mono, 1 is normal and 2 is doubled." },
@@ -190,7 +198,9 @@ inline const Table& params()
         { "pdelay_semi", "How many semitones each echo is shifted." },
         { "pdelay_mix", "Balance between the dry sound and the echoes." },
         // modulation
-        { "lfo1_shape", "The LFO's wave shape: sine, triangle, saw, square or random." },
+        { "lfo1_shape", "The LFO's wave shape: sine, triangle, saw, square, random, or Custom (the cycle you drew with DRAW)." },
+        { "lfo1_w1", "Draw one cycle of this LFO by hand (32 points, smooth and wrapping). Drawing switches the LFO's Shape to Custom." },
+        { "lfo2_w1", "Draw one cycle of this LFO by hand (32 points, smooth and wrapping). Drawing switches the LFO's Shape to Custom." },
         { "lfo1_sync", "Free, or locked to the host tempo at a note length." },
         { "lfo1_rate_hz", "Speed of the LFO when it is not synced, in Hz." },
         { "lfo1_keysync", "Restarts the LFO whenever a note starts from silence." },
@@ -242,7 +252,11 @@ inline const Table& params()
         // arp
         { "arp_on", "Arpeggiator: plays the held notes (or chord) one after another." },
         { "arp_div", "Rate: the length of each arp step. Triplet (T) and dotted (D) lengths are included." },
-        { "arp_mode", "Pattern: Up, Down, Up-Down, Down-Up, Random, Played, Chord, Waterfall (overlapping notes that cascade up and mirror down), or Custom (a pattern of up to 64 steps that you draw)." },
+        { "arp_mode", "Pattern: Up, Down, Up-Down, Down-Up, Random, Played, Chord, Waterfall (overlapping notes that cascade up and mirror down), Custom (a pattern of up to 64 steps that you draw), or Events (up to 64 steps, each with its own notes, length and velocity)." },
+        { "arp_ev_length", "How many steps the Events pattern has, from 1 to 64 (four bars of 16). Right-click the pattern to change it." },
+        { "arp_ev_1_mask", "The notes of this Events step: each lit cell is a held-note number (0 is the lowest held note, past the last it continues an octave up). Several cells sound together; none is a rest." },
+        { "arp_ev_1_len", "How many steps this event lasts (0 uses the normal gate). A long event keeps ringing while later steps play." },
+        { "arp_ev_1_vel", "This event's velocity, 1 to 127." },
         { "chord_deg_1_shape", "The Custom chord shape of this scale degree: the notes above its root that the chord plays. Edit it on the grid; used when Mode is Custom." },
         { "arp_pat_length", "How many steps the Custom pattern has, from 1 to 64 (four bars of 16). Right-click the pattern to change it." },
         { "arp_pat_1", "The note number of this Custom pattern step: 0 is the lowest held note, 1 the next, and past the last one it continues an octave up. Negative numbers go down." },

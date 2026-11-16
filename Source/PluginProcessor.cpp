@@ -123,6 +123,11 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     flt ("eq_mid_db", "EQ Mid Db", -15.0f, 15.0f, 0.0f); flt ("eq_high_db", "EQ High Db", -15.0f, 15.0f, 0.0f);
     toggle ("tape_on", "Tape On", false);
     flt ("tape_drive", "Tape Drive", 0.0f, 1.0f, 0.4f); flt ("tape_tone", "Tape Tone", 0.0f, 1.0f, 0.7f); flt ("tape_wobble", "Tape Wobble", 0.0f, 1.0f, 0.2f);
+    // the tape stage doubles as the distortion: Type picks the shape (Tape is the original), Band limits it to one part of the spectrum, Mix keeps some of the clean sound (older presets: Tape, whole signal, Mix 1)
+    choice ("tape_type", "Tape Type", { "Tape", "Soft Clip", "Hard Clip", "Fold", "Tube", "Diode", "Rectify" }, 0);
+    flt ("tape_bias", "Tape Bias", -1.0f, 1.0f, 0.0f); flt ("tape_mix", "Tape Mix", 0.0f, 1.0f, 1.0f);
+    choice ("tape_band", "Tape Band", { "Full", "Low", "Mid", "High" }, 0);
+    flt ("tape_lo_hz", "Tape Low Split Hz", 60.0f, 1000.0f, 200.0f, 0.4f); flt ("tape_hi_hz", "Tape High Split Hz", 500.0f, 10000.0f, 2000.0f, 0.4f);
     toggle ("widener_on", "Widener On", false);
     flt ("widener_width", "Widener Width", 0.0f, 2.0f, 1.4f);
     toggle ("wah_on", "Wah On", false);
@@ -139,7 +144,8 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     for (int n = 1; n <= 2; ++n)
     {
         const juce::String t = "lfo" + juce::String (n);
-        choice (t + "_shape", "LFO " + juce::String (n) + " Shape", { "Sine", "Triangle", "Saw", "Square", "Random" }, 0);
+        choice (t + "_shape", "LFO " + juce::String (n) + " Shape", { "Sine", "Triangle", "Saw", "Square", "Random", "Custom" }, 0);
+        for (int k = 1; k <= rf::kLfoPts; ++k) flt (t + "_w" + juce::String (k), "LFO " + juce::String (n) + " Draw " + juce::String (k), 0.0f, 1.0f, 0.5f + 0.5f * std::sin (2.0f * 3.14159265f * (float) (k - 1) / (float) rf::kLfoPts));     // the drawn cycle (Shape: Custom); the default is a sine
         flt (t + "_rate_hz", "LFO " + juce::String (n) + " Rate Hz", 0.05f, 20.0f, n == 1 ? 2.0f : 0.5f, 0.5f);
         choice (t + "_sync", "LFO " + juce::String (n) + " Sync", syncNames(), 0);
     }
@@ -277,7 +283,7 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     toggle ("arp_run", "Arp Run", true);
     choice ("arp_div", "Arp Division", { "1/1", "1/2", "1/2D", "1/2T", "1/4", "1/4D", "1/4T", "1/8", "1/8D", "1/8T", "1/16", "1/16D", "1/16T", "1/32" }, 10);
     choice ("arp_order", "Arp Order", { "Pitch", "As Played", "Converge", "Diverge", "Random" }, 0);
-    choice ("arp_mode", "Arp Mode", { "Up", "Down", "Up-Down", "Down-Up", "Random", "Played", "Chord", "Waterfall", "Custom" }, 0);
+    choice ("arp_mode", "Arp Mode", { "Up", "Down", "Up-Down", "Down-Up", "Random", "Played", "Chord", "Waterfall", "Custom", "Events" }, 0);
     choice ("arp_wshape", "Arp Waterfall Shape", { "Cascade", "Spiral", "Geyser", "Twin", "Tide", "Climb" }, 0);
     choice ("arp_grouping", "Arp Grouping", { "Pattern", "5-5-6", "7-7-2", "3-3-3-3-4", "4-4-4-4" }, 0);
     integer ("arp_octaves", "Arp Octaves", 1, 4, 1);
@@ -297,6 +303,15 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     }
     integer ("arp_pat_length", "Arp Pattern Length", 1, 64, 16);
     for (int i = 1; i <= 64; ++i) integer ("arp_pat_" + juce::String (i), "Arp Pattern Step " + juce::String (i), -12, 12, (i - 1) % 8);   // Custom mode: note number of each step
+    // Events mode: up to 64 steps, each an event with its own notes (a mask over the held-note numbers 0 to 11, 0 = rest), length in steps (0 = the normal gate) and velocity
+    integer ("arp_ev_length", "Arp Events Length", 1, 64, 16);
+    for (int i = 1; i <= 64; ++i)
+    {
+        const auto n = juce::String (i);
+        integer ("arp_ev_" + n + "_mask", "Arp Event " + n + " Notes", 0, 4095, 1 << ((i - 1) % 8));
+        integer ("arp_ev_" + n + "_len", "Arp Event " + n + " Length", 0, 16, 0);
+        integer ("arp_ev_" + n + "_vel", "Arp Event " + n + " Velocity", 1, 127, 100);
+    }
     // Tempo sync for the effects and the vibrato: Free keeps the Hz / ms control, a note value follows the host tempo (new controls default to Free)
     for (const char* e : { "trem", "pan", "chorus", "flanger", "wah", "vib", "delay", "pdelay", "talk" })
         choice (juce::String (e) + "_sync", juce::String (e) + " Sync", syncNames(), 0);
@@ -305,6 +320,7 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     flt ("vib_decay_ms", "Vibrato Decay Ms", 0.0f, 5000.0f, 0.0f, 0.5f);      // then it settles to the sustain level over this long
     flt ("vib_sustain", "Vibrato Sustain", 0.0f, 1.0f, 1.0f);                 // the level it settles to, as a fraction of the depth
     flt ("vib_vel", "Vibrato Velocity", 0.0f, 1.0f, 0.0f);                    // how much a soft note's vibrato is reduced (1: velocity scales it fully)
+    flt ("vib_release_ms", "Vibrato Release Ms", 0.0f, 5000.0f, 0.0f, 0.5f);  // after the key is let go the vibrato fades out over this long (0: it carries on until the voice ends, as before)
     flt ("vib_wheel", "Vibrato Wheel", 0.0f, 1.0f, 0.0f);                     // the mod wheel adds up to this many semitones of depth
     toggle ("osc2_wt_file", "Osc 2 Wavetable From File", false); toggle ("osc3_wt_file", "Osc 3 Wavetable From File", false);
     toggle ("wt_smooth", "Wavetable Smooth Morph", false);        // on: the Width morph blends four neighbouring frames (cubic) instead of two
@@ -652,6 +668,8 @@ RelicProcessor::RelicProcessor()
     }
     for (int i = 0; i < 7; ++i) degShapes[(size_t) i] = apvts.getRawParameterValue ("chord_deg_" + juce::String (i + 1) + "_shape");
     for (int i = 0; i < 64; ++i) patSteps[(size_t) i] = apvts.getRawParameterValue ("arp_pat_" + juce::String (i + 1));
+    for (int i = 0; i < 64; ++i) { const auto n = juce::String (i + 1); evMask[(size_t) i] = apvts.getRawParameterValue ("arp_ev_" + n + "_mask"); evLen[(size_t) i] = apvts.getRawParameterValue ("arp_ev_" + n + "_len"); evVel[(size_t) i] = apvts.getRawParameterValue ("arp_ev_" + n + "_vel"); }
+    for (int w = 0; w < 2; ++w) for (int k = 0; k < rf::kLfoPts; ++k) lfoPts[(size_t) w][(size_t) k] = apvts.getRawParameterValue ("lfo" + juce::String (w + 1) + "_w" + juce::String (k + 1));
     for (int i = 0; i < 15; ++i) chopPts[(size_t) i] = apvts.getRawParameterValue ("chop_pt_" + juce::String (i + 1));
     for (int i = 0; i < 16; ++i)
     {
@@ -712,6 +730,7 @@ rf::ChordArpSettings RelicProcessor::readChordArp() const
     }
     for (int i = 0; i < 7; ++i) c.degShape[(size_t) i] = (int) degShapes[(size_t) i]->load();
     c.patLength = (int) v ("arp_pat_length"); for (int i = 0; i < 64; ++i) c.pattern[(size_t) i] = (int) patSteps[(size_t) i]->load();
+    c.evLength = (int) v ("arp_ev_length"); for (int i = 0; i < 64; ++i) { c.evMask[(size_t) i] = (int) evMask[(size_t) i]->load(); c.evLen[(size_t) i] = (int) evLen[(size_t) i]->load(); c.evVel[(size_t) i] = (int) evVel[(size_t) i]->load(); }
     c.octaves = (int) v ("arp_octaves"); c.gate = v ("arp_gate"); c.swing = v ("arp_swing"); c.human = v ("arp_human");
     return c;
 }
@@ -772,7 +791,7 @@ void RelicProcessor::noteOn (int note, float vel)
             if (idx < 0) for (int i = 0; i < allowed; ++i) if (! voices[i].active) { idx = i; break; }
             if (idx < 0) { unsigned long long oldest = ~0ull; for (int i = 0; i < allowed; ++i) if (voices[i].age < oldest) { oldest = voices[i].age; idx = i; } }
             auto& vo = voices[idx]; const double nF = (double) audioSample->frames();
-            vo.active = true; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.vibPh = 0.0; vo.vibAge = 0; vo.glide = 0.0f; vo.chop = true; vo.sampleActive = true; vo.sampleActiveB = false;
+            vo.active = true; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.vibPh = 0.0; vo.vibAge = 0; vo.vibRelAge = 0; vo.glide = 0.0f; vo.chop = true; vo.sampleActive = true; vo.sampleActiveB = false;
             vo.sliceA = std::floor (b[sl] * nF); vo.sliceB = std::min (nF - 1.0, std::floor (b[sl + 1] * nF));
             vo.choked = false; vo.chokeGain = 1.0f; vo.choke = choke; vo.chopRev = kitRev[(size_t) pad]->load() > 0.5f; vo.chopRateMul = std::exp2 ((double) kitPitch[(size_t) pad]->load() / 12.0);
             vo.chopMul = std::pow (10.0f, kitLevel[(size_t) pad]->load() / 20.0f);
@@ -797,7 +816,7 @@ void RelicProcessor::noteOn (int note, float vel)
     if (idx < 0) { unsigned long long oldest = ~0ull; for (int i = 0; i < allowed; ++i) if (voices[i].age < oldest) { oldest = voices[i].age; idx = i; } }
     auto& vo = voices[idx];
     vo.zone = p ("split_on")->load() > 0.5f ? (note < (int) p ("split_note")->load() ? 1 : 2) : 0;
-    vo.active = true; vo.chop = false; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.vibPh = 0.0; vo.vibAge = 0;
+    vo.active = true; vo.chop = false; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.vibPh = 0.0; vo.vibAge = 0; vo.vibRelAge = 0;
     vo.glide = (p ("porta_on")->load() > 0.5f && lastNote >= 0) ? (float) (lastNote - note) : 0.0f; lastNote = note;
     vo.baseHz = 440.0 * std::pow (2.0, (note - 69) / 12.0);
     unsigned int seed = (unsigned int) (note * 2654435761u + counter * 40503u);
@@ -971,12 +990,15 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
         auto hzOf = [&] (const char* rate, const char* sync) { const double b = rf::lfoSyncBeats ((int) p (sync)->load()); return b > 0.0 ? hostBpm / 60.0 / b : (double) p (rate)->load(); };
         const double h1 = hzOf ("lfo1_rate_hz", "lfo1_sync"), h2 = hzOf ("lfo2_rate_hz", "lfo2_sync"), hv = rf::syncedHz ((int) p ("vib_sync")->load(), hostBpm, (double) p ("vib_rate_hz")->load());
         vibHz = hv;
-        for (int i = 0; i < n; ++i) { lfoBuf[0][i] = lfo[0].next (h1, sr, sh1); lfoBuf[1][i] = lfo[1].next (h2, sr, sh2); vibBuf[i] = vibLfo.next (hv, sr, rf::ModLfo::Sine); }
+        float drawn[2][rf::kLfoPts];
+        for (int w = 0; w < 2; ++w) if ((w == 0 ? sh1 : sh2) == rf::ModLfo::Custom) for (int k = 0; k < rf::kLfoPts; ++k) drawn[w][k] = lfoPts[(size_t) w][(size_t) k]->load();
+        for (int i = 0; i < n; ++i) { lfoBuf[0][i] = lfo[0].next (h1, sr, sh1, drawn[0]); lfoBuf[1][i] = lfo[1].next (h2, sr, sh2, drawn[1]); vibBuf[i] = vibLfo.next (hv, sr, rf::ModLfo::Sine); }
     }
     const float wheel = modWheel.load(), bendSemis = pitchBend.load() * 2.0f;
     const bool vibOn = p ("vib_on")->load() > 0.5f; const float vibSemis = p ("vib_depth_ct")->load() * 0.01f;
     const double vibDelaySm = p ("vib_delay_ms")->load() * 0.001 * sr, vibFadeSm = p ("vib_fade_ms")->load() * 0.001 * sr; const double vibDecaySm = p ("vib_decay_ms")->load() * 0.001 * sr; const float vibSus = p ("vib_sustain")->load(), vibVel = p ("vib_vel")->load();
-    const bool vibOnset = vibDelaySm > 0.0 || vibFadeSm > 0.0 || vibDecaySm > 0.0 || vibSus < 0.999f || vibVel > 0.001f;
+    const double vibRelSm = p ("vib_release_ms")->load() * 0.001 * sr;
+    const bool vibOnset = vibRelSm > 0.0 || vibDelaySm > 0.0 || vibFadeSm > 0.0 || vibDecaySm > 0.0 || vibSus < 0.999f || vibVel > 0.001f;
     const float vibDepth = vibSemis + p ("vib_wheel")->load() * wheel;
     const bool portaOn = p ("porta_on")->load() > 0.5f; const float glideCoef = std::exp (-1.0f / (std::max (1.0f, p ("porta_ms")->load()) * 0.001f * (float) sr));
 
@@ -1043,6 +1065,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                     const double a = (double) vo.vibAge++ - vibDelaySm;
                     float env = a <= 0.0 ? 0.0f : (vibFadeSm > 0.0 ? (float) std::min (1.0, a / vibFadeSm) : 1.0f);
                     if (a > vibFadeSm) { const double d = vibDecaySm > 0.0 ? std::min (1.0, (a - vibFadeSm) / vibDecaySm) : 1.0; env *= 1.0f - (1.0f - vibSus) * (float) d; }       // decay to the sustain level
+                    if (vibRelSm > 0.0 && vo.env.stage == rf::Adsr::Release) env *= (float) std::max (0.0, 1.0 - (double) vo.vibRelAge++ / vibRelSm);      // its own release: fades from wherever it was
                     vo.vibPh += vibHz / sr; if (vo.vibPh >= 1.0) vo.vibPh -= 1.0;
                     vibNow = env * (1.0f - vibVel * (1.0f - vo.velocity)) * (float) std::sin (2.0 * rf::kPi * vo.vibPh);
                 }
@@ -1290,6 +1313,8 @@ void RelicProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     auto on = [this] (const char* id) { return p (id)->load() > 0.5f; };
     const bool cOn = on ("crush_on"), pOn = on ("pan_on"), tOn = on ("trem_on"), kOn = on ("comp_on"), dOn = on ("delay_on"), chOn = on ("chorus_on"), flOn = on ("flanger_on"), rvOn = on ("reverb_on"),
                eqOn = on ("eq_on"), tpOn = on ("tape_on"), wdOn = on ("widener_on"), whOn = on ("wah_on"), lfOn = on ("lofi_on"), otOn = on ("ott_on"), pdOn = on ("pdelay_on"), tkOn = on ("talk_on"), sgOn = on ("sgate_on");
+    rf::Tape::Opts tapeOpts; tapeOpts.type = (int) p ("tape_type")->load(); tapeOpts.bias = p ("tape_bias")->load(); tapeOpts.mix = p ("tape_mix")->load(); tapeOpts.band = (int) p ("tape_band")->load();
+    tapeOpts.loHz = p ("tape_lo_hz")->load(); tapeOpts.hiHz = p ("tape_hi_hz")->load();
     const float master = p ("master")->load();
     // Bar lock: a synced effect's LFO follows the host's position, so a cycle always starts on its note value's grid while the host plays
     if (playing && ppq >= 0.0)
@@ -1315,7 +1340,7 @@ void RelicProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         if (lfOn) lofi.process (l, r, p ("lofi_tone_hz")->load(), p ("lofi_noise")->load(), p ("lofi_wobble")->load(), p ("lofi_mix")->load(), sr);
         if (whOn) wah.process (l, r, (int) p ("wah_mode")->load(), rf::syncedHz ((int) p ("wah_sync")->load(), hostBpm, p ("wah_rate_hz")->load()), p ("wah_depth")->load(), p ("wah_reso")->load(), p ("wah_mix")->load(), sr);
         if (tkOn) talk.process (l, r, p ("talk_vowel")->load(), p ("talk_reso")->load(), rf::syncedHz ((int) p ("talk_sync")->load(), hostBpm, p ("talk_rate_hz")->load()), p ("talk_depth")->load(), p ("talk_mix")->load(), sr);
-        if (tpOn) tape.process (l, r, p ("tape_drive")->load(), p ("tape_tone")->load(), p ("tape_wobble")->load(), sr);
+        if (tpOn) tape.process (l, r, p ("tape_drive")->load(), p ("tape_tone")->load(), p ("tape_wobble")->load(), sr, tapeOpts);
         if (eqOn) eq.process (l, r, p ("eq_low_db")->load(), p ("eq_mid_hz")->load(), p ("eq_mid_db")->load(), p ("eq_high_db")->load(), sr);
         if (pOn) panner.process (l, r, rf::syncedHz ((int) p ("pan_sync")->load(), hostBpm, p ("pan_rate_hz")->load()), p ("pan_depth")->load(), (int) p ("pan_shape")->load(), sr);
         if (tOn) trem.process (l, r, rf::syncedHz ((int) p ("trem_sync")->load(), hostBpm, p ("trem_rate_hz")->load()), p ("trem_depth")->load(), sr);

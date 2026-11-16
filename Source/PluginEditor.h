@@ -1027,16 +1027,16 @@ class VibratoPanel : public juce::Component, private juce::Timer
 public:
     VibratoPanel (RelicProcessor& p) : proc (p)
     {
-        static const struct { const char* id; const char* label; const char* suffix; } rows[6] = { { "vib_delay_ms", "DELAY", " ms" }, { "vib_fade_ms", "FADE-IN", " ms" }, { "vib_decay_ms", "DECAY", " ms" },
-                                                                                             { "vib_sustain", "SUSTAIN", "" }, { "vib_vel", "VELOCITY", "" }, { "vib_wheel", "MOD WHEEL", " st" } };
-        for (int i = 0; i < 6; ++i)
+        static const struct { const char* id; const char* label; const char* suffix; } rows[7] = { { "vib_delay_ms", "DELAY", " ms" }, { "vib_fade_ms", "FADE-IN", " ms" }, { "vib_decay_ms", "DECAY", " ms" },
+                                                                                             { "vib_sustain", "SUSTAIN", "" }, { "vib_release_ms", "RELEASE", " ms" }, { "vib_vel", "VELOCITY", "" }, { "vib_wheel", "MOD WHEEL", " st" } };
+        for (int i = 0; i < 7; ++i)
         {
             auto& r = row[(size_t) i]; r.label.setText (rows[i].label, juce::dontSendNotification); r.label.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0)); r.label.setFont (juce::FontOptions (12.5f));
             r.slider.setSliderStyle (juce::Slider::LinearHorizontal); r.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 20); r.slider.setTextValueSuffix (rows[i].suffix);
-            r.slider.setNumDecimalPlacesToDisplay (i < 3 ? 0 : 2); r.slider.setTooltip (help::forId (rows[i].id));
+            r.slider.setNumDecimalPlacesToDisplay (juce::String (rows[i].suffix) == " ms" ? 0 : 2); r.slider.setTooltip (help::forId (rows[i].id));
             r.att = std::make_unique<juce::SliderParameterAttachment> (*proc.apvts.getParameter (rows[i].id), r.slider); addAndMakeVisible (r.label); addAndMakeVisible (r.slider);
         }
-        setSize (420, 112 + 6 * 28 + 10); startTimerHz (20);
+        setSize (420, 112 + 7 * 28 + 10); startTimerHz (20);
     }
     void paint (juce::Graphics& g) override
     {
@@ -1045,16 +1045,48 @@ public:
         const float d = val ("vib_delay_ms"), f = val ("vib_fade_ms"), dc = val ("vib_decay_ms"), su = val ("vib_sustain");
         const float total = std::max (600.0f, (d + f + dc) * 1.25f + 200.0f), hold = total - (d + f + dc);
         auto X = [&] (float ms) { return box.getX() + 6.0f + (box.getWidth() - 12.0f) * ms / total; }; auto Y = [&] (float v) { return box.getBottom() - 8.0f - (box.getHeight() - 16.0f) * v; };
-        juce::Path pth; pth.startNewSubPath (X (0), Y (0)); pth.lineTo (X (d), Y (0)); pth.lineTo (X (d + f), Y (1)); pth.lineTo (X (d + f + dc), Y (su)); pth.lineTo (X (d + f + dc + hold * 0.6f), Y (su)); pth.lineTo (X (total), Y (0));
+        juce::Path pth; pth.startNewSubPath (X (0), Y (0)); pth.lineTo (X (d), Y (0)); pth.lineTo (X (d + f), Y (1)); pth.lineTo (X (d + f + dc), Y (su)); const float rel = val ("vib_release_ms"), kOff = d + f + dc + hold * 0.6f; pth.lineTo (X (kOff), Y (su)); if (rel > 0.0f) pth.lineTo (X (std::min (total, kOff + rel)), Y (0)); else { pth.lineTo (X (total), Y (su)); }
         g.setColour (juce::Colour (0xff9be15d)); g.strokePath (pth, juce::PathStrokeType (2.0f));
         g.setColour (juce::Colour (0xffe8e0b0).withAlpha (0.6f)); g.setFont (juce::FontOptions (11.0f)); g.drawText ("depth over one note (the note's release ends it)", box.reduced (8, 3).toNearestInt(), juce::Justification::topRight);
     }
-    void resized() override { for (int i = 0; i < 6; ++i) { auto& r = row[(size_t) i]; const int y = 112 + i * 28; r.label.setBounds (14, y, 84, 24); r.slider.setBounds (100, y, getWidth() - 112, 24); } }
+    void resized() override { for (int i = 0; i < 7; ++i) { auto& r = row[(size_t) i]; const int y = 112 + i * 28; r.label.setBounds (14, y, 84, 24); r.slider.setBounds (100, y, getWidth() - 112, 24); } }
 private:
     struct Row { juce::Label label; juce::Slider slider; std::unique_ptr<juce::SliderParameterAttachment> att; };
     float val (const char* id) const { return proc.apvts.getRawParameterValue (id)->load(); }
     void timerCallback() override { repaint (0, 0, getWidth(), 106); }
-    RelicProcessor& proc; std::array<Row, 6> row;
+    RelicProcessor& proc; std::array<Row, 7> row;
+};
+
+// The tape stage's distortion settings: which shape (Type), which part of the spectrum it works on (Band, with the two split frequencies), and its Bias.
+class DistortionPanel : public juce::Component
+{
+public:
+    DistortionPanel (RelicProcessor& p)
+    {
+        auto addCombo = [&] (juce::ComboBox& cb, const char* id, const char* label, int y, std::unique_ptr<juce::ComboBoxParameterAttachment>& att, juce::Label& lb)
+        {
+            auto* par = dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter (id)); cb.addItemList (par->choices, 1); att = std::make_unique<juce::ComboBoxParameterAttachment> (*par, cb); cb.setTooltip (help::forId (id));
+            lb.setText (label, juce::dontSendNotification); lb.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0)); lb.setFont (juce::FontOptions (12.5f)); addAndMakeVisible (lb); addAndMakeVisible (cb); (void) y;
+        };
+        addCombo (type, "tape_type", "TYPE", 0, typeA, typeL); addCombo (band, "tape_band", "BAND", 0, bandA, bandL);
+        static const struct { const char* id; const char* label; const char* suffix; int dp; } rows[3] = { { "tape_bias", "BIAS", "", 2 }, { "tape_lo_hz", "LOW SPLIT", " Hz", 0 }, { "tape_hi_hz", "HIGH SPLIT", " Hz", 0 } };
+        for (int i = 0; i < 3; ++i)
+        {
+            auto& r = row[(size_t) i]; r.label.setText (rows[i].label, juce::dontSendNotification); r.label.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0)); r.label.setFont (juce::FontOptions (12.5f));
+            r.slider.setSliderStyle (juce::Slider::LinearHorizontal); r.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 20); r.slider.setTextValueSuffix (rows[i].suffix); r.slider.setNumDecimalPlacesToDisplay (rows[i].dp);
+            r.slider.setTooltip (help::forId (rows[i].id)); r.att = std::make_unique<juce::SliderParameterAttachment> (*p.apvts.getParameter (rows[i].id), r.slider); addAndMakeVisible (r.label); addAndMakeVisible (r.slider);
+        }
+        setSize (400, 5 * 32 + 16);
+    }
+    void paint (juce::Graphics& g) override { g.fillAll (juce::Colour (0xff17131c)); }
+    void resized() override
+    {
+        typeL.setBounds (14, 10, 84, 24); type.setBounds (100, 10, getWidth() - 114, 24); bandL.setBounds (14, 42, 84, 24); band.setBounds (100, 42, getWidth() - 114, 24);
+        for (int i = 0; i < 3; ++i) { auto& r = row[(size_t) i]; const int y = 74 + i * 32; r.label.setBounds (14, y, 84, 24); r.slider.setBounds (100, y, getWidth() - 112, 24); }
+    }
+private:
+    struct Row { juce::Label label; juce::Slider slider; std::unique_ptr<juce::SliderParameterAttachment> att; };
+    juce::ComboBox type, band; juce::Label typeL, bandL; std::unique_ptr<juce::ComboBoxParameterAttachment> typeA, bandA; std::array<Row, 3> row;
 };
 
 // A modulation slot's response drawn by hand: nine points, drag across the graph to paint them. The horizontal axis is how far the source is from zero (0 to 1), the vertical
@@ -1131,6 +1163,76 @@ public:
 private:
     void timerCallback() override { graph.repaint(); }
     RelicProcessor& proc; CurveGraph graph; juce::Label title; juce::ToggleButton use; juce::TextButton lineB, presetB; std::unique_ptr<juce::ButtonParameterAttachment> useA;
+};
+
+
+// One LFO's cycle drawn by hand: 32 points joined smoothly and wrapping round. Drag across the graph to paint; the LFO uses it when its Shape is Custom.
+class LfoGraph : public juce::Component
+{
+public:
+    LfoGraph (RelicProcessor& p, int lfoNo) : proc (p), lfo (lfoNo) { setMouseCursor (juce::MouseCursor::CrosshairCursor); }
+    void paint (juce::Graphics& g) override
+    {
+        const auto b = area(); g.setColour (juce::Colour (0xff0b090e)); g.fillRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
+        g.setColour (juce::Colour (0xffe8e0b0).withAlpha (0.18f));
+        for (int i = 0; i <= 4; ++i) { g.drawHorizontalLine ((int) (b.getY() + b.getHeight() * i / 4.0f), b.getX(), b.getRight()); g.drawVerticalLine ((int) (b.getX() + b.getWidth() * i / 4.0f), b.getY(), b.getBottom()); }
+        g.setColour (juce::Colour (0xffe8e0b0).withAlpha (0.4f)); g.drawHorizontalLine ((int) (b.getY() + b.getHeight() * 0.5f), b.getX(), b.getRight());
+        float w[rf::kLfoPts]; for (int k = 0; k < rf::kLfoPts; ++k) w[k] = get (k);
+        const bool on = (int) proc.apvts.getRawParameterValue ("lfo" + juce::String (lfo) + "_shape")->load() == rf::ModLfo::Custom;
+        juce::Path path; for (int i = 0; i <= 240; ++i) { const double ph = i / 240.0; const float y = (rf::lfoCustomEval (w, ph) + 1.0f) * 0.5f; const float px = b.getX() + (float) ph * b.getWidth(), py = b.getBottom() - y * b.getHeight(); if (i == 0) path.startNewSubPath (px, py); else path.lineTo (px, py); }
+        g.setColour (on ? juce::Colour (0xff9be15d) : juce::Colour (0xff9be15d).withAlpha (0.4f)); g.strokePath (path, juce::PathStrokeType (2.2f));
+        for (int k = 0; k < rf::kLfoPts; ++k) { g.setColour (juce::Colour (0xffe8e0b0)); g.fillEllipse (b.getX() + b.getWidth() * (float) k / (float) rf::kLfoPts - 2.5f, b.getBottom() - w[k] * b.getHeight() - 2.5f, 5.0f, 5.0f); }
+    }
+    void mouseDown (const juce::MouseEvent& e) override { for (int k = 0; k < rf::kLfoPts; ++k) par (k)->beginChangeGesture(); touched = true; lastCol = -1; paintAt (e); }
+    void mouseDrag (const juce::MouseEvent& e) override { paintAt (e); }
+    void mouseUp (const juce::MouseEvent&) override { if (touched) for (int k = 0; k < rf::kLfoPts; ++k) par (k)->endChangeGesture(); touched = false; lastCol = -1; }
+    void setAll (const float* v) { for (int k = 0; k < rf::kLfoPts; ++k) { auto* q = par (k); q->beginChangeGesture(); q->setValueNotifyingHost (v[k]); q->endChangeGesture(); } useCustom(); repaint(); }
+private:
+    juce::RangedAudioParameter* par (int k) const { return proc.apvts.getParameter ("lfo" + juce::String (lfo) + "_w" + juce::String (k + 1)); }
+    float get (int k) const { return proc.apvts.getRawParameterValue ("lfo" + juce::String (lfo) + "_w" + juce::String (k + 1))->load(); }
+    void useCustom() { if (auto* m = proc.apvts.getParameter ("lfo" + juce::String (lfo) + "_shape")) m->setValueNotifyingHost (m->convertTo0to1 ((float) rf::ModLfo::Custom)); }       // drawing switches the LFO to Custom
+    juce::Rectangle<float> area() const { return getLocalBounds().toFloat().reduced (14.0f, 12.0f); }
+    void paintAt (const juce::MouseEvent& e)
+    {
+        const auto b = area(); const int k = juce::jlimit (0, rf::kLfoPts - 1, (int) std::floor ((e.position.x - b.getX()) / b.getWidth() * (float) rf::kLfoPts + 0.5f) % rf::kLfoPts);
+        const float y = juce::jlimit (0.0f, 1.0f, (b.getBottom() - e.position.y) / b.getHeight());
+        par (k)->setValueNotifyingHost (y);
+        if (lastCol >= 0 && std::abs (k - lastCol) > 1) for (int j = std::min (k, lastCol) + 1; j < std::max (k, lastCol); ++j) par (j)->setValueNotifyingHost (lastY + (y - lastY) * (float) (j - lastCol) / (float) (k - lastCol));
+        lastCol = k; lastY = y; useCustom(); repaint();
+    }
+    RelicProcessor& proc; int lfo; bool touched = false; int lastCol = -1; float lastY = 0.0f;
+};
+
+class LfoPanel : public juce::Component, private juce::Timer
+{
+public:
+    LfoPanel (RelicProcessor& p, int lfoNo) : graph (p, lfoNo)
+    {
+        addAndMakeVisible (graph); title.setText ("LFO " + juce::String (lfoNo) + " DRAWN WAVE", juce::dontSendNotification); title.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0)); title.setFont (juce::FontOptions (14.0f)); addAndMakeVisible (title);
+        hint.setText ("drag to draw one cycle; the LFO uses it when its Shape is Custom", juce::dontSendNotification); hint.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0).withAlpha (0.6f)); hint.setFont (juce::FontOptions (11.0f)); addAndMakeVisible (hint);
+        static const char* names[6] = { "SINE", "TRI", "SAW UP", "SAW DOWN", "SQUARE", "SMOOTH RANDOM" };
+        for (int i = 0; i < 6; ++i)
+        {
+            auto& b = btn[(size_t) i]; b.setButtonText (names[i]); addAndMakeVisible (b);
+            b.onClick = [this, i]
+            {
+                float v[rf::kLfoPts]; uint32_t r = (uint32_t) juce::Time::getMillisecondCounter() * 2654435761u + 12345u;
+                for (int k = 0; k < rf::kLfoPts; ++k)
+                {
+                    const float x = (float) k / (float) rf::kLfoPts; r = r * 1664525u + 1013904223u;
+                    switch (i) { case 0: v[k] = 0.5f + 0.5f * std::sin (2.0f * juce::MathConstants<float>::pi * x); break; case 1: v[k] = 1.0f - std::abs (2.0f * x - 1.0f); break; case 2: v[k] = x; break;
+                                 case 3: v[k] = 1.0f - x; break; case 4: v[k] = x < 0.5f ? 1.0f : 0.0f; break; default: v[k] = (float) (r >> 9) / 8388608.0f; }
+                }
+                graph.setAll (v);
+            };
+        }
+        setSize (440, 330); startTimerHz (10);
+    }
+    void paint (juce::Graphics& g) override { g.fillAll (juce::Colour (0xff17131c)); }
+    void resized() override { title.setBounds (12, 8, 220, 22); hint.setBounds (12, 30, getWidth() - 24, 16); graph.setBounds (12, 50, getWidth() - 24, 220); for (int i = 0; i < 6; ++i) btn[(size_t) i].setBounds (12 + i * 70, 282, 66, 28); }
+private:
+    void timerCallback() override { graph.repaint(); }
+    LfoGraph graph; juce::Label title, hint; std::array<juce::TextButton, 6> btn;
 };
 
 // Bars for one pass of the arpeggio on a demo triad; the bar for the step that just played lights up.
@@ -1340,6 +1442,110 @@ private:
     void set (const juce::String& key, float value) { auto* p = proc.apvts.getParameter (key); p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (value)); p->endChangeGesture(); repaint(); }
 };
 
+
+// The arp's EVENTS pattern: up to 64 steps in four bars of 16. Each column is a step; the rows are held-note numbers 0 (bottom) to 11, so a column with several cells is a chord.
+// Click a cell to switch that note on or off, drag a lit cell sideways to make it last longer, drag in the strip at the bottom to set the step's velocity, right-click for the rest.
+class EventLane : public Display
+{
+public:
+    EventLane (RelicProcessor& p) : Display (p)
+    {
+        setTooltip ("Events pattern: click a cell to add or remove a note (row = held-note number, 0 at the bottom); drag a lit cell sideways to lengthen it; drag in the bottom strip to set velocity. Click BAR 1-4 to change page. Right-click: step length, pattern length, reset.");
+    }
+    void paint (juce::Graphics& g) override
+    {
+        paintFrame (g); const auto s = proc.readChordArp(); const int len = juce::jlimit (1, 64, s.evLength), hot = proc.arpStepShown.load() - 1; const bool live = s.arpOn && s.mode == 9;
+        g.setColour (lime.withAlpha (0.85f)); drawText (g, "EVENTS   " + juce::String (len) + " STEPS", juce::Rectangle<float> (18.0f, 8.0f, 300.0f, 14.0f), 11, juce::Justification::left);
+        for (int b = 0; b < 4; ++b)
+        {
+            auto t = tabBounds (b); g.setColour (b == page ? gold : goldDim); g.drawRoundedRectangle (t, 3, 1.2f);
+            g.setColour (parchment.withAlpha (b * 16 < len ? 0.9f : 0.3f)); drawText (g, "BAR " + juce::String (b + 1), t, 10, juce::Justification::centred);
+        }
+        for (int i = 0; i < 16; ++i)
+        {
+            const int idx = page * 16 + i; const bool on = idx < len; auto col = colBounds (i); auto grid = gridArea (); auto strip = stripArea ();
+            g.setColour (lime.withAlpha (on ? (i % 4 == 0 ? 0.14f : 0.08f) : 0.02f)); g.fillRoundedRectangle (juce::Rectangle<float> (col.getX(), grid.getY(), col.getWidth(), grid.getHeight()), 2);
+            if (! on) continue;
+            const int mask = s.evMask[(size_t) idx], l = s.evLen[(size_t) idx];
+            for (int r = 0; r < 12; ++r) if (mask & (1 << r))
+            {
+                float w = col.getWidth(); if (l > 1) w = std::min ((float) l, (float) (16 - i)) * (col.getWidth() + 2.0f) - 2.0f;
+                g.setColour (lime.withAlpha (live ? 0.85f : 0.5f)); g.fillRoundedRectangle (col.getX(), rowY (r) + 1, w, rowH() - 2, 2);
+            }
+            const float v = (float) s.evVel[(size_t) idx] / 127.0f; g.setColour (gold.withAlpha (mask ? 0.85f : 0.3f)); g.fillRect (col.getX(), strip.getBottom() - strip.getHeight() * v, col.getWidth(), strip.getHeight() * v);
+            if (live && hot >= 0 && hot % len == idx) { g.setColour (gold); g.drawRoundedRectangle (juce::Rectangle<float> (col.getX() - 1, grid.getY(), col.getWidth() + 2, strip.getBottom() - grid.getY()), 3, 1.5f); }
+        }
+        g.setColour (parchment.withAlpha (0.5f)); drawText (g, "VEL", juce::Rectangle<float> (0.0f, stripArea().getY(), 14.0f, stripArea().getHeight()), 8, juce::Justification::centred);
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu()) { menu (e); return; }
+        for (int b = 0; b < 4; ++b) if (tabBounds (b).contains (e.position)) { page = b; repaint(); return; }
+        const int len = juce::jlimit (1, 64, proc.readChordArp().evLength); const int i = colAt (e.position.x); if (i < 0 || page * 16 + i >= len) return;
+        const int idx = page * 16 + i; drag = Drag::None; dragStep = idx;
+        if (stripArea().expanded (0, 4).contains (e.position)) { drag = Drag::Vel; velAt (e); return; }
+        if (! gridArea().contains (e.position)) return;
+        dragRow = rowAt (e.position.y); const int mask = (int) proc.readChordArp().evMask[(size_t) idx];
+        if (mask & (1 << dragRow)) { drag = Drag::Resize; moved = false; } else { put (maskKey (idx), (float) (mask | (1 << dragRow))); drag = Drag::None; }
+        repaint();
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (drag == Drag::Vel) { velAt (e); return; }
+        if (drag != Drag::Resize) return;
+        const int i = colAt (e.position.x); if (i < 0) return; const int steps = juce::jlimit (1, 16, page * 16 + i - dragStep + 1); if (page * 16 + i == dragStep && ! moved) return;
+        moved = true; put ("arp_ev_" + juce::String (dragStep + 1) + "_len", steps == 1 ? 0.0f : (float) steps); repaint();
+    }
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        if (drag == Drag::Resize && ! moved) { const int mask = (int) proc.readChordArp().evMask[(size_t) dragStep]; put (maskKey (dragStep), (float) (mask & ~(1 << dragRow))); }       // a plain click on a lit cell clears it
+        drag = Drag::None; repaint();
+    }
+private:
+    enum class Drag { None, Resize, Vel };
+    int page = 0, dragStep = 0, dragRow = 0; bool moved = false; Drag drag = Drag::None;
+    juce::Rectangle<float> body() const { auto b = getLocalBounds().toFloat().reduced (12, 4); b.removeFromTop (22); b.removeFromLeft (14); return b; }
+    juce::Rectangle<float> gridArea() const { auto b = body(); return b.withTrimmedBottom (34); }
+    juce::Rectangle<float> stripArea() const { auto b = body(); return b.removeFromBottom (30); }
+    juce::Rectangle<float> tabBounds (int b) const { return { (float) getWidth() - 12.0f - 4 * 52.0f + (float) b * 52.0f, 6.0f, 48.0f, 16.0f }; }
+    juce::Rectangle<float> colBounds (int i) const { const auto a = gridArea(); const float w = a.getWidth() / 16; return { a.getX() + w * i + 1, a.getY(), w - 2, a.getHeight() }; }
+    float rowH() const { return gridArea().getHeight() / 12.0f; }
+    float rowY (int r) const { return gridArea().getBottom() - rowH() * (float) (r + 1); }
+    int colAt (float x) const { const auto a = gridArea(); const int i = (int) std::floor ((x - a.getX()) / (a.getWidth() / 16)); return i < 0 || i > 15 ? -1 : i; }
+    int rowAt (float y) const { return juce::jlimit (0, 11, (int) std::floor ((gridArea().getBottom() - y) / rowH())); }
+    static juce::String maskKey (int idx) { return "arp_ev_" + juce::String (idx + 1) + "_mask"; }
+    void put (const juce::String& key, float value) { auto* p = proc.apvts.getParameter (key); p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (value)); p->endChangeGesture(); }
+    void velAt (const juce::MouseEvent& e)
+    {
+        const int i = colAt (e.position.x); const int len = juce::jlimit (1, 64, proc.readChordArp().evLength); if (i < 0 || page * 16 + i >= len) return; const auto a = stripArea();
+        put ("arp_ev_" + juce::String (page * 16 + i + 1) + "_vel", (float) juce::jlimit (1, 127, (int) std::lround (127.0f * (a.getBottom() - e.position.y) / a.getHeight()))); repaint();
+    }
+    void menu (const juce::MouseEvent& e)
+    {
+        const auto st = proc.readChordArp(); const int i = colAt (e.position.x), idx = i < 0 ? -1 : page * 16 + i; juce::PopupMenu m, lens;
+        if (idx >= 0 && idx < st.evLength)
+        {
+            lens.addItem (200, "Normal gate", true, st.evLen[(size_t) idx] == 0);
+            for (int n : { 1, 2, 3, 4, 6, 8, 12, 16 }) lens.addItem (200 + n, juce::String (n) + (n == 1 ? " step" : " steps"), true, st.evLen[(size_t) idx] == n);
+            m.addSubMenu ("Step " + juce::String (idx + 1) + " length", lens); m.addItem (300, "Clear step " + juce::String (idx + 1)); m.addSeparator();
+        }
+        juce::PopupMenu pl; for (int n : { 4, 8, 12, 16, 24, 32, 48, 64 }) pl.addItem (n, juce::String (n) + " steps", true, n == st.evLength);
+        m.addSubMenu ("Pattern length", pl); m.addItem (400, "Reset: one rising note per step"); m.addItem (401, "Clear: every step a rest"); m.addItem (402, "All velocities 100");
+        auto safe = juce::Component::SafePointer<EventLane> (this);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe, idx] (int r)
+        {
+            if (safe == nullptr || r < 1) return;
+            if (r <= 64) safe->put ("arp_ev_length", (float) r);
+            else if (r >= 200 && r <= 216) safe->put ("arp_ev_" + juce::String (idx + 1) + "_len", (float) (r - 200));
+            else if (r == 300) safe->put (maskKey (idx), 0.0f);
+            else if (r == 400) for (int k = 0; k < 64; ++k) { safe->put (maskKey (k), (float) (1 << (k % 8))); safe->put ("arp_ev_" + juce::String (k + 1) + "_len", 0.0f); }
+            else if (r == 401) for (int k = 0; k < 64; ++k) safe->put (maskKey (k), 0.0f);
+            else if (r == 402) for (int k = 0; k < 64; ++k) safe->put ("arp_ev_" + juce::String (k + 1) + "_vel", 100.0f);
+            safe->repaint();
+        });
+    }
+};
+
 // Horizontal slider for a signed amount: name on the left, value on the right.
 class AmountSlider : public juce::Component, public juce::SettableTooltipClient
 {
@@ -1444,7 +1650,7 @@ private:
     struct Pad { std::unique_ptr<ui::StoneButton> btn; std::unique_ptr<juce::ButtonParameterAttachment> att; const char* id; };
     std::vector<Pad> pads;
     std::unique_ptr<ui::StoneButton> waveLeft, waveRight, waveName, polyBtn, allOn, bypassFx;
-    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn, vibEnvBtn, wtOscBtn; int wtOsc = 0;      // wavetable file strip on the OSC tab
+    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn, vibEnvBtn, wtOscBtn, tapeShapeBtn; std::array<std::unique_ptr<ui::StoneButton>, 2> lfoDrawBtn; int wtOsc = 0;      // wavetable file strip on the OSC tab
     struct SyncChip { std::unique_ptr<ui::StoneButton> btn; juce::String knobId, syncId; };
     std::vector<SyncChip> syncChips; void updateSyncChips();        // a small note-value button on each rate / time knob that can follow the host tempo
     void updateWtStrip(); void showWavetableMenu(); void loadWavetableDialog(); void afterWavetableLoaded();
@@ -1455,7 +1661,7 @@ private:
     std::unique_ptr<ui::StoneButton> panShape;
 
     // CHORDS and ARP tabs
-    std::unique_ptr<ui::ChordDisplay> chordDisp; std::unique_ptr<ui::ArpDisplay> arpDisp; std::unique_ptr<ui::RhythmLane> rhythmLane; std::unique_ptr<ui::PatternLane> patternLane; std::unique_ptr<ui::ShapeEditor> shapeEditor;
+    std::unique_ptr<ui::ChordDisplay> chordDisp; std::unique_ptr<ui::ArpDisplay> arpDisp; std::unique_ptr<ui::RhythmLane> rhythmLane; std::unique_ptr<ui::PatternLane> patternLane; std::unique_ptr<ui::EventLane> eventLane; std::unique_ptr<ui::ShapeEditor> shapeEditor;
     std::map<juce::String, std::unique_ptr<ui::Stepper>> steppers;
     std::map<juce::String, std::unique_ptr<ui::StoneButton>> noteToggles; std::vector<std::unique_ptr<juce::ButtonParameterAttachment>> noteAtts;
     ui::Stepper* addStepper (const char* id, const char* name, std::vector<juce::Component*>& group);

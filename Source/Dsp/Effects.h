@@ -316,23 +316,77 @@ struct Equalizer
 };
 
 // Tape: soft saturation (unity gain for small signals), tone roll-off and wow/flutter from a short modulated delay.
+struct TapeOpts { int type = 0; float bias = 0.0f, mix = 1.0f; int band = 0; float loHz = 200.0f, hiHz = 2000.0f; };   // band: 0 whole signal, 1 low, 2 mid, 3 high
+
 struct Tape
 {
-    void prepare (double sr) { for (auto& d : wow) d.prepare ((int) (sr * 0.012)); lp[0] = lp[1] = 0.0f; p1 = p2 = 0.0; }
-    inline void process (float& l, float& r, float drive, float tone, float wobble, double sr)
+    // Distortion shapes for the Type control. 0 (Tape) is the original soft tanh and is what every older preset uses.
+    enum Type { TapeSat = 0, SoftClip, HardClip, Fold, Tube, Diode, Rectify, kTypes };
+    using Opts = TapeOpts;
+
+    static inline float shape (int type, float x)
+    {
+        switch (type)
+        {
+            case SoftClip: return x / (1.0f + std::abs (x));
+            case HardClip: return x > 1.0f ? 1.0f : (x < -1.0f ? -1.0f : x);
+            case Fold:     return std::sin (x);                                                         // keeps folding back as the drive rises
+            case Tube:     return std::tanh (x);                                                        // the bias (added before) makes it lopsided: even harmonics
+            case Diode:    return x >= 0.0f ? 1.0f - std::exp (-x) : -0.5f * (1.0f - std::exp (2.0f * x));      // one side clips hard, the other soft
+            case Rectify:  { const float t = std::tanh (x); return 0.6f * t + 0.4f * std::abs (t); }    // part of the wave is flipped: octave-up grit
+            default:       return std::tanh (x);
+        }
+    }
+    void prepare (double sr) { for (auto& d : wow) d.prepare ((int) (sr * 0.012)); lp[0] = lp[1] = 0.0f; p1 = p2 = 0.0; for (auto& c : ch) c = Chan(); lastLo = lastHi = -1.0f; }
+    inline void process (float& l, float& r, float drive, float tone, float wobble, double sr, const Opts& o = Opts())
     {
         p1 += 0.6 / sr; p1 -= std::floor (p1); p2 += 7.0 / sr; p2 -= std::floor (p2);
         const double d = (0.003 + wobble * (0.0015 * std::sin (2 * kPi * p1) + 0.00015 * std::sin (2 * kPi * p2))) * sr;
-        const float g = 1.0f + drive * 7.0f, ref = 0.3f, norm = ref / std::tanh (g * ref);
+        const float g = 1.0f + drive * 7.0f, ref = 0.3f, norm = o.type == TapeSat ? ref / std::tanh (g * ref) : ref / shape (o.type, g * ref);
         const float a = (float) std::exp (-2.0 * kPi * (2000.0 * std::pow (9.0, (double) tone)) / sr);
+        const bool bias = o.type == Tube || o.type == Diode, split = o.band > 0;
+        if (split && (o.loHz != lastLo || o.hiHz != lastHi)) { setCrossovers (o.loHz, o.hiHz, sr); lastLo = o.loHz; lastHi = o.hiHz; }
         float* io[2] = { &l, &r };
         for (int c = 0; c < 2; ++c)
         {
-            wow[c].write (*io[c]); const float y = std::tanh (g * wow[c].read (d)) * norm; wow[c].advance();
+            wow[c].write (*io[c]); const float x = wow[c].read (d); wow[c].advance();
+            float y;
+            if (o.type == TapeSat && ! split) y = std::tanh (g * x) * norm;          // the original path, exactly
+            else
+            {
+                auto sh = [&] (float v) { float t = g * v; if (bias) t += o.bias; float z = shape (o.type, t) * norm; if (bias) z = ch[c].dc (z); return z; };
+                if (! split) y = sh (x);
+                else
+                {
+                    auto& k = ch[c]; const float low = k.lp1b.process (k.lp1a.process (x)), rest = k.hp1b.process (k.hp1a.process (x));
+                    const float mid = k.lp2b.process (k.lp2a.process (rest)), high = k.hp2b.process (k.hp2a.process (rest));
+                    const float lowAp = k.lpAb.process (k.lpAa.process (low)) + k.hpAb.process (k.hpAa.process (low));       // the low band goes through the upper split too, so the three still add to a flat sum
+                    y = (o.band == 1 ? sh (lowAp) : lowAp) + (o.band == 2 ? sh (mid) : mid) + (o.band == 3 ? sh (high) : high);
+                }
+            }
+            if (o.mix < 0.9999f) y = x + (y - x) * o.mix;
             lp[c] = (1.0f - a) * y + a * lp[c]; *io[c] = lp[c];
         }
     }
     DelayLine wow[2]; float lp[2] = { 0, 0 }; double p1 = 0, p2 = 0;
+private:
+    struct Chan
+    {
+        Biquad lp1a, lp1b, hp1a, hp1b, lp2a, lp2b, hp2a, hp2b, lpAa, lpAb, hpAa, hpAb; float dcx = 0, dcy = 0;
+        float dc (float v) { const float y = v - dcx + 0.995f * dcy; dcx = v; dcy = y; return y; }       // removes the offset an uneven shape makes
+    };
+    Chan ch[2]; float lastLo = -1.0f, lastHi = -1.0f;
+    void setCrossovers (float lo, float hi, double sr)
+    {
+        const double q = 0.7071067811865476; if (hi < lo * 1.2f) hi = lo * 1.2f;
+        for (auto& k : ch)
+        {
+            for (auto* b : { &k.lp1a, &k.lp1b }) b->lowpass (lo, q, sr);
+            for (auto* b : { &k.hp1a, &k.hp1b }) b->highpass (lo, q, sr);
+            for (auto* b : { &k.lp2a, &k.lp2b, &k.lpAa, &k.lpAb }) b->lowpass (hi, q, sr);
+            for (auto* b : { &k.hp2a, &k.hp2b, &k.hpAa, &k.hpAb }) b->highpass (hi, q, sr);
+        }
+    }
 };
 
 // Stereo widener: mid/side with a side gain. 0 = mono, 1 = unchanged, 2 = double side.

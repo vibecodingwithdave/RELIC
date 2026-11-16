@@ -204,6 +204,7 @@ RelicEditor::RelicEditor (RelicProcessor& p)
     arpDisp   = std::make_unique<ui::ArpDisplay> (proc);   addAndMakeVisible (*arpDisp);   arpGroup.push_back (arpDisp.get());
     rhythmLane = std::make_unique<ui::RhythmLane> (proc); addAndMakeVisible (*rhythmLane); arpGroup.push_back (rhythmLane.get());
     patternLane = std::make_unique<ui::PatternLane> (proc); addAndMakeVisible (*patternLane); arpGroup.push_back (patternLane.get());
+    eventLane = std::make_unique<ui::EventLane> (proc); addAndMakeVisible (*eventLane); arpGroup.push_back (eventLane.get());
     addStepper ("chord_key", "Key", chordGroup); addStepper ("chord_scale", "Scale", chordGroup); addStepper ("chord_type", "Chord", chordGroup);
     addStepper ("chord_voicing", "Voicing", chordGroup); addStepper ("chord_inversion", "Inversion", chordGroup);
     addStepper ("chord_mode", "Mode", chordGroup); addStepper ("chord_shape", "Shape", chordGroup); chordGroup.push_back (addNoteToggle ("voice_lead", "VOICE LEAD", 0.34f)); chordGroup.push_back (addNoteToggle ("chord_lock", "SCALE LOCK", 0.34f)); chordGroup.push_back (addKnob ("chord_strum_ms", "Strum"));
@@ -347,12 +348,14 @@ RelicEditor::RelicEditor (RelicProcessor& p)
 
     // ---- FX 3 tab: EQ, tape, widener, wah, lo-fi, OTT ----
     for (auto k : { std::make_pair ("eq_low_db", "Low"), { "eq_mid_hz", "Mid Hz" }, { "eq_mid_db", "Mid" }, { "eq_high_db", "High" },
-                    { "tape_drive", "Drive" }, { "tape_tone", "Tone" }, { "tape_wobble", "Wow" }, { "widener_width", "Width" },
+                    { "tape_drive", "Drive" }, { "tape_tone", "Tone" }, { "tape_wobble", "Wow" }, { "tape_mix", "Mix" }, { "widener_width", "Width" },
                     { "wah_rate_hz", "Rate" }, { "wah_depth", "Depth" }, { "wah_reso", "Reso" }, { "wah_mix", "Mix" },
                     { "lofi_tone_hz", "Tone" }, { "lofi_noise", "Noise" }, { "lofi_wobble", "Wow" }, { "lofi_mix", "Mix" },
                     { "ott_depth", "Depth" }, { "ott_time", "Time" }, { "ott_mix", "Mix" } })
         fx3Group.push_back (addKnob (k.first, k.second));
     for (auto id : { "eq_on", "tape_on", "widener_on", "wah_on", "lofi_on", "ott_on" }) fx3Group.push_back (addNoteToggle (id, "ON", 0.45f));
+    tapeShapeBtn = std::make_unique<ui::StoneButton> ("SHAPE...", true, false); tapeShapeBtn->textScale = 0.4f; tapeShapeBtn->setTooltip (help::forId ("tape_type")); addAndMakeVisible (*tapeShapeBtn); fx3Group.push_back (tapeShapeBtn.get());
+    tapeShapeBtn->onClick = [this] { juce::CallOutBox::launchAsynchronously (std::make_unique<ui::DistortionPanel> (proc), tapeShapeBtn->getScreenBounds(), nullptr); };
     wahMode = std::make_unique<ui::StoneButton> ("LFO", true, false); wahMode->textScale = 0.4f; wahMode->onClick = [this] { cycleChoice ("wah_mode", +1); };
     addAndMakeVisible (*wahMode); fx3Group.push_back (wahMode.get());
     addNoteToggle ("eq_on", "EQ", 0.42f, "eq_on#main"); addNoteToggle ("tape_on", "TAPE", 0.38f, "tape_on#main"); addNoteToggle ("lead_on", "LEAD", 0.38f, "lead_on");
@@ -415,6 +418,9 @@ RelicEditor::RelicEditor (RelicProcessor& p)
         const juce::String t = "lfo" + juce::String (n);
         addStepper ((t + "_shape").toRawUTF8(), "Shape", modGroup); addStepper ((t + "_sync").toRawUTF8(), "Sync", modGroup);
         modGroup.push_back (addKnob ((t + "_rate_hz").toRawUTF8(), "Rate"));
+        lfoDrawBtn[(size_t) n - 1] = std::make_unique<ui::StoneButton> ("DRAW", true, false); lfoDrawBtn[(size_t) n - 1]->textScale = 0.4f; lfoDrawBtn[(size_t) n - 1]->setTooltip (help::forId ((t + "_w1").toRawUTF8()));
+        addAndMakeVisible (*lfoDrawBtn[(size_t) n - 1]); modGroup.push_back (lfoDrawBtn[(size_t) n - 1].get());
+        lfoDrawBtn[(size_t) n - 1]->onClick = [this, n] { juce::CallOutBox::launchAsynchronously (std::make_unique<ui::LfoPanel> (proc, n), lfoDrawBtn[(size_t) n - 1]->getScreenBounds(), nullptr); };
     }
     for (int n = 1; n <= 8; ++n)
     {
@@ -644,8 +650,8 @@ void RelicEditor::updateChordView()
 void RelicEditor::updateArpView()
 {
     if (patternLane == nullptr || currentTab != 5) return;
-    const bool custom = (int) proc.apvts.getRawParameterValue ("arp_mode")->load() == 8;
-    patternLane->setVisible (custom); arpDisp->setVisible (! custom);
+    const int mode = (int) proc.apvts.getRawParameterValue ("arp_mode")->load(); const bool custom = mode == 8, events = mode == 9;
+    patternLane->setVisible (custom); eventLane->setVisible (events); arpDisp->setVisible (! custom && ! events); rhythmLane->setVisible (! events);
 }
 
 void RelicEditor::updateTextureView()
@@ -924,7 +930,7 @@ void RelicEditor::resized()
 
     // FX 3 tab
     {
-        const char* ids[6][4] = { { "eq_low_db", "eq_mid_hz", "eq_mid_db", "eq_high_db" }, { "tape_drive", "tape_tone", "tape_wobble", nullptr }, { "widener_width", nullptr, nullptr, nullptr },
+        const char* ids[6][4] = { { "eq_low_db", "eq_mid_hz", "eq_mid_db", "eq_high_db" }, { "tape_drive", "tape_tone", "tape_wobble", "tape_mix" }, { "widener_width", nullptr, nullptr, nullptr },
                                   { "wah_rate_hz", "wah_depth", "wah_reso", "wah_mix" }, { "lofi_tone_hz", "lofi_noise", "lofi_wobble", "lofi_mix" }, { "ott_depth", "ott_time", "ott_mix", nullptr } };
         const char* on[6] = { "eq_on", "tape_on", "widener_on", "wah_on", "lofi_on", "ott_on" };
         for (int pnl = 0; pnl < 6; ++pnl)
@@ -933,7 +939,7 @@ void RelicEditor::resized()
             int n = 0; for (int k = 0; k < 4; ++k) if (ids[pnl][k]) ++n;
             for (int k = 0; k < 4; ++k) if (ids[pnl][k]) K (ids[pnl][k])->setBounds (R (x0 + 4 + (k % 2) * 56.0f, rowY ((n + 1) / 2, k / 2, 0.0f), 54, 120));
         }
-        wahMode->setBounds (R (552 + 3 * 120.0f + 8, 582, 100, 36));
+        wahMode->setBounds (R (552 + 3 * 120.0f + 8, 582, 100, 36)); tapeShapeBtn->setBounds (R (552 + 1 * 120.0f + 8, 582, 100, 36));
     }
     noteToggles["eq_on#main"]->setBounds (R (1300, 200, 165, 90)); noteToggles["tape_on#main"]->setBounds (R (1300, 300, 80, 34)); noteToggles["lead_on"]->setBounds (R (1386, 300, 80, 34));
 
@@ -954,7 +960,7 @@ void RelicEditor::resized()
         const juce::String t = "lfo" + juce::String (n); const float x0 = 548 + (n - 1) * 366.0f;
         steppers[(t + "_shape").toRawUTF8()]->setBounds (R (x0 + 10, 190, 160, 70)); steppers[(t + "_sync").toRawUTF8()]->setBounds (R (x0 + 188, 190, 160, 70));
         K ((t + "_rate_hz").toRawUTF8())->setBounds (R (x0 + 10, 264, 92, 84));
-        noteToggles[t + "_keysync"]->setBounds (R (x0 + 150, 286, 150, 40));
+        noteToggles[t + "_keysync"]->setBounds (R (x0 + 150, 286, 150, 40)); lfoDrawBtn[(size_t) n - 1]->setBounds (R (x0 + 150, 328, 150, 24));
     }
     modPageBtn[0]->setBounds (R (558, 356, 130, 32)); modPageBtn[1]->setBounds (R (696, 356, 130, 32));
     for (int n = 1; n <= 8; ++n)
@@ -988,7 +994,7 @@ void RelicEditor::resized()
 
     // CHORDS and ARP tabs
     chordDisp->setBounds (R (548, 156, 724, 170)); shapeEditor->setBounds (R (548, 156, 724, 170)); arpDisp->setBounds (R (548, 156, 724, 96));
-    rhythmLane->setBounds (R (548, 258, 724, 76)); patternLane->setBounds (R (548, 156, 724, 96));
+    rhythmLane->setBounds (R (548, 258, 724, 76)); patternLane->setBounds (R (548, 156, 724, 96)); eventLane->setBounds (R (548, 156, 724, 178));
     const float colX[4] = { 548, 728, 908, 1088 };
     steppers["chord_key"]->setBounds (R (colX[0], 340, 172, 70)); steppers["chord_scale"]->setBounds (R (colX[1], 340, 172, 70));
     steppers["chord_type"]->setBounds (R (colX[2], 340, 172, 70)); steppers["chord_voicing"]->setBounds (R (colX[3], 340, 172, 70));

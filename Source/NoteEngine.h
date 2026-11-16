@@ -21,6 +21,9 @@ struct ChordArpSettings
     // CUSTOM mode (arp_mode 8): a hand-made pattern of up to 64 steps (four 16-step bars). Each step is a note number in the held notes (0 = lowest, 1 = next,
     // wrapping upward an octave at a time; negative numbers wrap downward).
     int patLength = 16; std::array<int, 64> pattern {};
+    // EVENTS mode (arp_mode 9): up to 64 steps, each its own event. Bit i of mask means 'held note number i' (as in CUSTOM, numbers past the last held note continue an octave up),
+    // so one step can sound several notes together; mask 0 is a rest (notes already ringing are left alone). len is how many steps the event lasts (0: the normal gate), vel its level 1..127.
+    int evLength = 16; std::array<int, 64> evMask {}, evLen {}, evVel {};
     // CUSTOM chord mode (chord_mode 2): one chord shape for each scale degree. Bit i of a mask means 'the root plus i semitones' is in the chord (bits 0 to 21).
     std::array<int, 7> degShape { 0x91, 0x89, 0x89, 0x91, 0x91, 0x89, 0x49 };   // the major scale's own triads: major, minor, minor, major, major, minor, diminished
     bool twoHand = false;   // 2-HAND: a slow low voice under the arp line (see NoteEngine::twoHandStep)
@@ -424,18 +427,18 @@ private:
         const int L = (int) pat.size(); const double len = stepLen (s, bpm, sr);
         // In the plain modes a grouping (Relic's own design: the reference's behaviour there could not be measured cleanly) cuts the line into the group
         // lengths and restarts the pattern at the top of every group, so a pass is one 16-step bar. Chord mode and Waterfall keep their own rules.
-        const bool grouped = s.grouping > 0 && s.mode != 6 && s.mode != 7 && s.mode != 8;
+        const bool grouped = s.grouping > 0 && s.mode != 6 && s.mode != 7 && s.mode != 8 && s.mode != 9;
         const int customLen = std::max (1, std::min (64, s.patLength));
-        cycleSteps = s.mode == 6 ? 1 : s.mode == 8 ? customLen : s.mode == 7 ? (s.grouping > 0 ? 16 : 8) : grouped ? 16
+        cycleSteps = s.mode == 6 ? 1 : s.mode == 8 ? customLen : s.mode == 9 ? std::max (1, std::min (64, s.evLength)) : s.mode == 7 ? (s.grouping > 0 ? 16 : 8) : grouped ? 16
                      : (s.mode == 2 || s.mode == 3) ? std::max (1, 2 * L - 2) : L;
         const int ps = grouped ? groupStep (s.grouping, patternStep) : patternStep;   // pattern position: restarts in every group
         const int laneLength = std::max (1, std::min (16, s.rhythmLength));
-        const auto cell = s.rhythmOn ? s.rhythm[(size_t) (step % laneLength)] : RhythmCell {};
+        const auto cell = s.rhythmOn && s.mode != 9 ? s.rhythm[(size_t) (step % laneLength)] : RhythmCell {};
         if (stopTail && cell.type != 2)
         { releaseTie (t, out); arpActive = false; stopTail = false; return; }
         const bool hit = cell.type == 0;
-        const bool tieNext = s.rhythmOn && s.rhythm[(size_t) ((step + 1) % laneLength)].type == 2;
-        if (s.order >= 2 && s.mode != 6 && s.mode != 8 && L > 1 && hit) // reorder only when a pattern note will actually be consumed
+        const bool tieNext = s.rhythmOn && s.mode != 9 && s.rhythm[(size_t) ((step + 1) % laneLength)].type == 2;
+        if (s.order >= 2 && s.mode != 6 && s.mode != 8 && s.mode != 9 && L > 1 && hit) // reorder only when a pattern note will actually be consumed
         {
             std::vector<std::pair<int, float>> src = pat; std::vector<int> idx;
             if (s.order == 2) { int lo = 0, hi = L - 1; while (lo <= hi) { idx.push_back (lo++); if (lo <= hi) idx.push_back (hi--); } }
@@ -443,8 +446,19 @@ private:
             else { if ((int) perm.size() != L || patternStep % L == 0) { perm.resize ((size_t) L); for (int k = 0; k < L; ++k) perm[(size_t) k] = k; for (int k = L - 1; k > 0 && patternStep % L == 0; --k) std::swap (perm[(size_t) k], perm[(size_t) (rnd01() * (k + 1)) % (size_t) (k + 1)]); } idx = perm; }
             for (int k = 0; k < L; ++k) pat[(size_t) k] = src[(size_t) idx[(size_t) k]];
         }
-        std::vector<std::pair<int, float>> play;
+        std::vector<std::pair<int, float>> play; int evLen = 0; float evVel = -1.0f;
         if (s.mode == 6) play = pat;
+        else if (s.mode == 9)       // EVENTS: every note whose bit is set sounds together, at this step's own level and length
+        {
+            const int k = patternStep % std::max (1, std::min (64, s.evLength)), nb = (int) base.size(), mask = s.evMask[(size_t) k];
+            evLen = std::max (0, std::min (16, s.evLen[(size_t) k])); evVel = (float) std::max (1, std::min (127, s.evVel[(size_t) k])) / 127.0f;
+            for (int d = 0; d < 12 && nb > 0; ++d) if (mask & (1 << d))
+            {
+                int note = base[(size_t) (d % nb)].first + 12 * (d / nb);
+                while (note > 127) note -= 12;
+                bool dup = false; for (auto& q : play) dup |= (q.first == note); if (! dup) play.push_back ({ note, base[(size_t) (d % nb)].second });
+            }
+        }
         else if (s.mode == 8)       // CUSTOM: the step's note number picks a held note; whole turns of the held-note list shift the octave
         {
             const int nb = (int) base.size(), d = s.pattern[(size_t) (patternStep % customLen)];
@@ -472,7 +486,7 @@ private:
         // Plain modes keep the existing gate law and full-gate overlap.
         const double gateDuration = s.mode == 7 ? len * (0.125 + 5.875 * s.gate * s.gate)
                                      : s.gate >= 0.999f ? len + 0.008 * sr : s.gate * len;
-        const int64_t offT = t + (int64_t) std::llround (gateDuration);
+        const int64_t offT = t + (int64_t) std::llround (gateDuration + (evLen > 1 ? (evLen - 1) * len : 0.0));
         // HUMAN: a little level give on every step, and now and then a ghost note (very quiet) once it is turned well up
         float vm = 1.0f + (rnd01() - 0.5f) * 0.2f * s.human;
         if (s.human > 0.6f && rnd01() < (s.human - 0.6f) * 0.6f) vm *= 0.2f;
@@ -496,7 +510,7 @@ private:
             if (! dropped) for (auto& p : play)
             {
                 // Measured reference lane floor: even a stored zero is a 6% hit.
-                const float velocity = std::max (0.02f, std::min (1.0f, p.second * vm)) * std::max (0.06f, std::min (1.0f, cell.velocity));
+                const float velocity = std::max (0.02f, std::min (1.0f, (evVel >= 0.0f ? evVel : p.second) * vm)) * std::max (0.06f, std::min (1.0f, cell.velocity));
                 int note = p.first;
                 if (s.spray > 0.0f && rnd01() < s.spray)          // SPRAY: this note jumps an octave, up or down
                 {

@@ -6,12 +6,24 @@
 
 namespace rf {
 
+// A hand-drawn LFO cycle: kLfoPts values stored 0..1 (0.5 = zero, the LFO's -1..+1), joined smoothly and wrapping round, so the end of the cycle flows into its start.
+constexpr int kLfoPts = 32;
+inline float lfoCustomEval (const float* w, double phase)
+{
+    const double u = (phase - std::floor (phase)) * (double) kLfoPts; int i = (int) u; if (i >= kLfoPts) i = kLfoPts - 1;
+    const float f = (float) (u - (double) i);
+    auto at = [&] (int k) { return w[((k % kLfoPts) + kLfoPts) % kLfoPts] * 2.0f - 1.0f; };
+    const float y0 = at (i - 1), y1 = at (i), y2 = at (i + 1), y3 = at (i + 2);
+    const float y = y1 + 0.5f * f * (y2 - y0 + f * (2.0f * y0 - 5.0f * y1 + 4.0f * y2 - y3 + f * (3.0f * (y1 - y2) + y3 - y0)));
+    return y < -1.0f ? -1.0f : (y > 1.0f ? 1.0f : y);
+}
+
 struct ModLfo
 {
-    enum Shape { Sine = 0, Triangle, Saw, Square, Random };
+    enum Shape { Sine = 0, Triangle, Saw, Square, Random, Custom };
     double phase = 0.0; float held = 0.0f; uint32_t rng = 0x1234567u;
     void reset() { phase = 0.0; held = 0.0f; rng = 0x1234567u; }
-    inline float next (double hz, double sr, int shape)
+    inline float next (double hz, double sr, int shape, const float* custom = nullptr)
     {
         const double prev = phase;
         phase += hz / sr;
@@ -24,6 +36,7 @@ struct ModLfo
             case Saw:      return (float) (2.0 * phase - 1.0);
             case Square:   return phase < 0.5 ? 1.0f : -1.0f;
             case Random:   return held;
+            case Custom:   return custom ? lfoCustomEval (custom, phase) : 0.0f;
             default:       return (float) std::sin (2.0 * 3.14159265358979323846 * phase);
         }
     }
