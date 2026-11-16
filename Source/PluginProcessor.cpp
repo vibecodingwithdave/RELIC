@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include <map>
 #include "PluginEditor.h"
 #include "BinaryData.h"
 
@@ -241,6 +242,17 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     integer ("chop_count", "Chop Count", 2, 16, 8);
     choice ("chop_grid", "Chop Grid", { "1/4", "1/8", "1/16", "1/32" }, 2);
     integer ("chop_pitch", "Chop Pitch", -12, 12, 0);
+    // Custom chop kit: one entry per pad. The defaults (own slice, no shift, forward, 0 dB, no choke group) are the plain chop sampler.
+    for (int n = 1; n <= 16; ++n)
+    {
+        const juce::String k = "chop_kit_" + juce::String (n) + "_", nm = "Chop Pad " + juce::String (n) + " ";
+        juce::StringArray sl; sl.add ("Own"); for (int i = 1; i <= 16; ++i) sl.add (juce::String (i)); sl.add ("Mute");
+        choice (k + "slice", nm + "Slice", sl, 0);
+        integer (k + "pitch", nm + "Pitch", -24, 24, 0);
+        toggle (k + "rev", nm + "Reverse", false);
+        flt (k + "level", nm + "Level", -24.0f, 6.0f, 0.0f);
+        choice (k + "choke", nm + "Choke", { "Off", "1", "2", "3", "4" }, 0);
+    }
     // Chords
     toggle ("chord_on", "Chord On", false);
     choice ("chord_key", "Chord Key", { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0);
@@ -471,18 +483,29 @@ static void installFactoryPresets()
     stamp.replaceWithText (version);
 }
 
-// The category sits in the first attributes of the file, so only the start of it is read (the library can hold hundreds of presets).
-static juce::String readCategory (const juce::File& f)
+PresetPart presetPartOfParam (const juce::String& id)
+{
+    auto starts = [&] (const char* pre) { return id.startsWith (pre); };
+    for (auto* pre : { "trem_", "delay_", "comp_", "crush_", "pan_", "chorus_", "flanger_", "reverb_", "eq_", "tape_", "widener_", "wah_", "lofi_", "ott_", "pdelay_", "talk_", "sgate_" }) if (starts (pre)) return PresetPart::Effects;
+    for (auto* pre : { "lfo1_", "lfo2_", "menv1_", "menv2_", "mod", "macro_", "xy_" }) if (starts (pre)) return PresetPart::Mod;
+    for (auto* pre : { "sample_", "sampleb_", "loop_", "tex_", "chop_", "split_" }) if (starts (pre)) return PresetPart::Sample;
+    for (auto* pre : { "arp_", "chord_", "voice_lead" }) if (starts (pre)) return PresetPart::Notes;
+    return PresetPart::Synth;             // oscillators, filter, envelopes, voices, glide, vibrato, master and the synth / sample blend
+}
+
+// The category and type sit in the first attributes of the file, so only the start of it is read (the library can hold hundreds of presets).
+static juce::String readStateAttr (const juce::File& f, const juce::String& attr)
 {
     juce::FileInputStream in (f); if (! in.openedOk()) return {};
     char buf[2048] = {}; const int n = in.read (buf, (int) sizeof (buf) - 1); if (n <= 0) return {};
     const auto head = juce::String::fromUTF8 (buf, n); const int stateAt = head.indexOf ("<STATE"); if (stateAt < 0) return {};
     const auto fromState = head.substring (stateAt); const int tagEnd = fromState.indexOfChar ('>');        // skips the <?xml ...?> line
     const auto tag = tagEnd > 0 ? fromState.substring (0, tagEnd) : fromState;
-    const int k = tag.indexOf (" category=\""); if (k < 0) return {};
-    const auto rest = tag.substring (k + 11);
+    const auto key = " " + attr + "=\""; const int k = tag.indexOf (key); if (k < 0) return {};
+    const auto rest = tag.substring (k + key.length());
     return rest.upToFirstOccurrenceOf ("\"", false, false).replace ("&amp;", "&").trim();
 }
+static juce::String readCategory (const juce::File& f) { return readStateAttr (f, "category"); }
 
 std::vector<PresetEntry> RelicProcessor::scanPresets() const
 {
@@ -492,7 +515,7 @@ std::vector<PresetEntry> RelicProcessor::scanPresets() const
         if (f.getFileName().startsWith (".")) continue;
         PresetEntry e; e.file = f; e.name = f.getFileNameWithoutExtension();
         e.bank = f.getParentDirectory().getRelativePathFrom (root).replaceCharacter ('\\', '/');
-        e.category = readCategory (f);
+        e.category = readCategory (f); e.part = readStateAttr (f, "partType");
         out.push_back (e);
     }
     auto rank = [] (const juce::String& b) { return b == "Factory" ? 0 : (b == "User" ? 1 : 2); };
@@ -508,10 +531,38 @@ static void resetAllParameters (juce::AudioProcessor& proc)
             if (r->paramID != "bypass") { r->beginChangeGesture(); r->setValueNotifyingHost (r->getDefaultValue()); r->endChangeGesture(); }
 }
 
+// Applies one part of a sound from a preset file: that part's controls are set (or reset when the file lacks them), everything else is left alone.
+bool RelicProcessor::loadPresetPart (const juce::XmlElement& xml, PresetPart part)
+{
+    std::map<juce::String, double> vals; for (auto* e : xml.getChildWithTagNameIterator ("PARAM")) vals[e->getStringAttribute ("id")] = e->getDoubleAttribute ("value");
+    for (auto* prm : getParameters())
+        if (auto* r = dynamic_cast<juce::RangedAudioParameter*> (prm))
+        {
+            if (r->paramID == "bypass" || presetPartOfParam (r->paramID) != part) continue;
+            const auto it = vals.find (r->paramID); const float v = it != vals.end() ? r->convertTo0to1 ((float) it->second) : r->getDefaultValue();
+            r->beginChangeGesture(); r->setValueNotifyingHost (v); r->endChangeGesture();
+        }
+    if (part == PresetPart::Sample)
+    {
+        const auto sp = xml.getStringAttribute ("samplePath"); juce::File sf (sp);
+        if (sp.isNotEmpty() && sf.existsAsFile()) loadSampleFile (sf, false); else { clearSample(); if (sp.isNotEmpty()) sampleError = "Sample not found: " + sf.getFileName(); }
+        const auto pb = xml.getStringAttribute ("samplePathB"); juce::File fb (pb); if (pb.isNotEmpty() && fb.existsAsFile()) loadSampleFile (fb, false, true); else clearSampleB();
+        const auto pt = xml.getStringAttribute ("samplePathT"); juce::File ft (pt); if (pt.isNotEmpty() && ft.existsAsFile()) loadTextureFile (ft); else clearTexture();
+    }
+    if (part == PresetPart::Synth)
+    {
+        const auto pw = xml.getStringAttribute ("wavetablePath"); juce::File fw (pw);
+        if (pw.isNotEmpty() && fw.existsAsFile()) loadWavetableFile (fw); else { clearWavetable(); if (pw.isNotEmpty()) sampleError = "Wavetable not found: " + fw.getFileName(); }
+    }
+    return true;
+}
+
 bool RelicProcessor::loadPresetFile (const juce::File& f)
 {
     auto xml = juce::XmlDocument::parse (f);
     if (xml == nullptr || ! xml->hasTagName ("STATE")) return false;
+    const int part = presetPartNames().indexOf (xml->getStringAttribute ("partType"));      // -1 / 0: a full preset (also every file from before partial presets)
+    if (part > 0) return loadPresetPart (*xml, (PresetPart) part);
     resetAllParameters (*this);
     for (auto* e : xml->getChildWithTagNameIterator ("PARAM"))
         if (auto* prm = apvts.getParameter (e->getStringAttribute ("id")))
@@ -536,14 +587,23 @@ void RelicProcessor::initPreset()
     apvts.state.setProperty ("presetName", "Init", nullptr); apvts.state.setProperty ("presetBank", "", nullptr); apvts.state.setProperty ("presetCategory", "", nullptr);
 }
 
-juce::File RelicProcessor::savePreset (const juce::String& name, const juce::String& category)
+juce::File RelicProcessor::savePreset (const juce::String& name, const juce::String& category, PresetPart part)
 {
     auto dir = presetsRoot().getChildFile ("User"); dir.createDirectory();
     auto safe = juce::File::createLegalFileName (name.trim()); if (safe.isEmpty()) safe = "Untitled";
     auto file = dir.getChildFile (safe + ".xml");
-    apvts.state.setProperty ("presetName", name.trim(), nullptr); apvts.state.setProperty ("presetBank", "User", nullptr); apvts.state.setProperty ("presetCategory", category, nullptr);
+    if (part == PresetPart::Full) { apvts.state.setProperty ("presetName", name.trim(), nullptr); apvts.state.setProperty ("presetBank", "User", nullptr); apvts.state.setProperty ("presetCategory", category, nullptr); }
     if (auto xml = apvts.copyState().createXml())
     {
+        if (part != PresetPart::Full)           // a partial preset: only this part's controls, and only the files that belong to it
+        {
+            for (int i = xml->getNumChildElements(); --i >= 0;)
+                if (auto* c = xml->getChildElement (i)) if (c->hasTagName ("PARAM") && presetPartOfParam (c->getStringAttribute ("id")) != part) xml->removeChildElement (c, true);
+            for (auto* a : { "samplePath", "samplePathB", "samplePathT" }) if (part != PresetPart::Sample) xml->removeAttribute (a);
+            if (part != PresetPart::Synth) xml->removeAttribute ("wavetablePath");
+            xml->removeAttribute ("presetBank");
+            xml->setAttribute ("partType", presetPartNames()[(int) part]);
+        }
         xml->setAttribute ("presetName", name.trim());
         if (category.isNotEmpty()) xml->setAttribute ("category", category); else xml->removeAttribute ("category");
         file.replaceWithText (xml->toString());
@@ -563,6 +623,12 @@ RelicProcessor::RelicProcessor()
     }
     for (int i = 0; i < 7; ++i) degShapes[(size_t) i] = apvts.getRawParameterValue ("chord_deg_" + juce::String (i + 1) + "_shape");
     for (int i = 0; i < 64; ++i) patSteps[(size_t) i] = apvts.getRawParameterValue ("arp_pat_" + juce::String (i + 1));
+    for (int i = 0; i < 16; ++i)
+    {
+        const juce::String k = "chop_kit_" + juce::String (i + 1) + "_";
+        kitSlice[(size_t) i] = apvts.getRawParameterValue (k + "slice"); kitPitch[(size_t) i] = apvts.getRawParameterValue (k + "pitch"); kitRev[(size_t) i] = apvts.getRawParameterValue (k + "rev");
+        kitLevel[(size_t) i] = apvts.getRawParameterValue (k + "level"); kitChoke[(size_t) i] = apvts.getRawParameterValue (k + "choke");
+    }
     installFactoryPresets();
 }
 
@@ -657,7 +723,11 @@ void RelicProcessor::noteOn (int note, float vel)
     if (p ("chop_on")->load() > 0.5f && audioSample != nullptr && audioSample->frames() > 1 && note >= kChopBase && note < kChopBase + 16)
     {
         double b[18]; const int cnt = chopSlices (*audioSample, hostBpm, b); const int pad = note - kChopBase;
-        if (pad >= cnt) return;                                  // a pad with no slice stays silent
+        const int ks = (int) kitSlice[(size_t) pad]->load();       // 0 own slice, 1..16 that slice, 17 muted pad
+        const int sl = ks == 0 ? pad : ks - 1;
+        if (ks == 17 || sl >= cnt) return;                       // a muted pad, or a pad with no slice, stays silent
+        const int choke = (int) kitChoke[(size_t) pad]->load();
+        if (choke > 0) for (auto& o : voices) if (o.active && o.chop && o.choke == choke && o.note != note && o.env.stage != rf::Adsr::Release) o.env.noteOff();
         {
             const int allowed = juce::jlimit (1, MaxVoices, (int) p ("voices")->load()); int idx = -1;
             for (int i = 0; i < allowed; ++i) if (voices[i].active && voices[i].note == note) { idx = i; break; }
@@ -665,9 +735,11 @@ void RelicProcessor::noteOn (int note, float vel)
             if (idx < 0) { unsigned long long oldest = ~0ull; for (int i = 0; i < allowed; ++i) if (voices[i].age < oldest) { oldest = voices[i].age; idx = i; } }
             auto& vo = voices[idx]; const double nF = (double) audioSample->frames();
             vo.active = true; vo.note = note; vo.velocity = vel; vo.age = ++counter; vo.vibPh = 0.0; vo.vibAge = 0; vo.glide = 0.0f; vo.chop = true; vo.sampleActive = true; vo.sampleActiveB = false;
-            vo.sliceA = std::floor (b[pad] * nF); vo.sliceB = std::min (nF - 1.0, std::floor (b[pad + 1] * nF));
+            vo.sliceA = std::floor (b[sl] * nF); vo.sliceB = std::min (nF - 1.0, std::floor (b[sl + 1] * nF));
+            vo.choke = choke; vo.chopRev = kitRev[(size_t) pad]->load() > 0.5f; vo.chopRateMul = std::exp2 ((double) kitPitch[(size_t) pad]->load() / 12.0);
+            vo.chopMul = std::pow (10.0f, kitLevel[(size_t) pad]->load() / 20.0f);
             if (vo.sliceB < vo.sliceA + 2.0) vo.sliceB = std::min (nF - 1.0, vo.sliceA + 2.0);
-            vo.samplePos = p ("sample_reverse")->load() > 0.5f ? vo.sliceB - 1.0 : vo.sliceA;
+            vo.samplePos = (p ("sample_reverse")->load() > 0.5f) != vo.chopRev ? vo.sliceB - 1.0 : vo.sliceA;
             vo.fl.reset(); vo.fr.reset(); vo.fl2.reset(); vo.fr2.reset(); vo.mpL = vo.mpR = 0.0f; vo.envA.level = vo.envB.level = 0.0f; vo.envA.noteOn(); vo.envB.noteOn(); vo.env.noteOn(); return;
         }
     }
@@ -983,17 +1055,17 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             if (haveS && vo.sampleActive && vo.chop)
             {
                 const int nn = smp->frames();
-                const float g = chopGain * vo.velocity * lvl * ea;
+                const bool vrev = rev != vo.chopRev; const float g = chopGain * vo.chopMul * vo.velocity * lvl * ea;
                 float cl = cubic (smp->L, vo.samplePos, nn), cr = cubic (smp->R, vo.samplePos, nn);
-                const double cxf = loopOn && ! rev ? std::min (xfF, 0.5 * (vo.sliceB - vo.sliceA)) : 0.0;
+                const double cxf = loopOn && ! vrev ? std::min (xfF, 0.5 * (vo.sliceB - vo.sliceA)) : 0.0;
                 if (cxf > 0.0 && vo.samplePos >= vo.sliceB - cxf)
                 {
                     const double u = (vo.samplePos - (vo.sliceB - cxf)) / cxf, p2 = vo.sliceA + u * cxf; const float gi = (float) std::sin (u * 1.5707963), go = (float) std::cos (u * 1.5707963);
                     cl = cl * go + cubic (smp->L, p2, nn) * gi; cr = cr * go + cubic (smp->R, p2, nn) * gi;
                 }
                 pl += cl * g; pr += cr * g;
-                const double step = rateRatio * chopRate * pf;
-                if (! rev)
+                const double step = rateRatio * chopRate * vo.chopRateMul * pf;
+                if (! vrev)
                 {
                     vo.samplePos += step;
                     if (vo.samplePos >= vo.sliceB) { if (loopOn) vo.samplePos = vo.sliceA + cxf + std::fmod (vo.samplePos - vo.sliceB, std::max (1.0, vo.sliceB - vo.sliceA - cxf)); else { vo.sampleActive = false; if (vo.env.stage != rf::Adsr::Release) vo.env.noteOff(); } }
@@ -1212,6 +1284,8 @@ void RelicProcessor::setStateInformation (const void* data, int size)
     if (auto xml = getXmlFromBinary (data, size))
         if (xml->hasTagName (apvts.state.getType()))
         {
+            // A partial preset handed over as a state (never written by this plugin itself) changes only its own part of the sound.
+            if (const int part = presetPartNames().indexOf (xml->getStringAttribute ("partType")); part > 0) { loadPresetPart (*xml, (PresetPart) part); return; }
             auto state = juce::ValueTree::fromXml (*xml);
             // Older projects predate GO/STOP; preserve their always-running arp,
             // even when loaded over a stopped instance.

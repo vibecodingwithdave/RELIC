@@ -44,7 +44,8 @@ void RelicEditor::showBrowser (bool show)
 
 void RelicEditor::stepPreset (int delta)
 {
-    auto list = proc.scanPresets(); if (list.empty()) return;
+    auto list = proc.scanPresets(); list.erase (std::remove_if (list.begin(), list.end(), [] (const PresetEntry& e) { return e.part.isNotEmpty(); }), list.end());       // partial presets are layered on by hand
+    if (list.empty()) return;
     int cur = -1; for (int i = 0; i < (int) list.size(); ++i) if (list[(size_t) i].name == proc.getPresetName() && list[(size_t) i].bank == proc.getPresetBank()) { cur = i; break; }
     int next = cur < 0 ? (delta > 0 ? 0 : (int) list.size() - 1) : (cur + delta + (int) list.size()) % (int) list.size();
     proc.loadPresetFile (list[(size_t) next].file);
@@ -61,6 +62,8 @@ void RelicEditor::doSave()
         const int cur = presetCategories().indexOf (proc.getPresetCategory());
         aw->getComboBoxComponent ("category")->setSelectedItemIndex (cur >= 0 ? cur : cats.size() - 1, juce::dontSendNotification);
     }
+    { juce::StringArray types; types.add ("Full preset (everything)"); for (int i = 1; i < presetPartNames().size(); ++i) types.add (presetPartNames()[i] + " only");
+      aw->addComboBox ("type", types, "Contains"); aw->getComboBoxComponent ("type")->setSelectedItemIndex (0, juce::dontSendNotification); }
     aw->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey)); aw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, aw] (int r)
     {
@@ -69,7 +72,8 @@ void RelicEditor::doSave()
         auto f = RelicProcessor::presetsRoot().getChildFile ("User").getChildFile (juce::File::createLegalFileName (name) + ".xml");
         const int ci = aw->getComboBoxComponent ("category")->getSelectedItemIndex();
         const juce::String category = ci >= 0 && ci < presetCategories().size() ? presetCategories()[ci] : juce::String();   // "Other" is saved as no category
-        auto doIt = [this, name, category] { proc.savePreset (name, category); if (browser->isVisible()) browser->refresh(); };
+        const auto part = (PresetPart) juce::jlimit (0, presetPartNames().size() - 1, aw->getComboBoxComponent ("type")->getSelectedItemIndex());
+        auto doIt = [this, name, category, part] { proc.savePreset (name, category, part); if (browser->isVisible()) browser->refresh(); };
         if (f.existsAsFile())
             juce::AlertWindow::showAsync (juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon).withTitle ("Replace preset?")
                 .withMessage ("\"" + name + "\" already exists in your User presets.").withButton ("Replace").withButton ("Cancel").withAssociatedComponent (this),
@@ -212,6 +216,12 @@ RelicEditor::RelicEditor (RelicProcessor& p)
     // ---- SAMPLER tab ----
     // SLOT A / SLOT B choose which sample layer the tab edits. Each layer has its own controls and, when switched on, its own envelope.
     sampDisp = std::make_unique<ui::SampleDisplay> (proc); addAndMakeVisible (*sampDisp); sampGroup.push_back (sampDisp.get());
+    kitBtn = std::make_unique<ui::StoneButton> ("KIT", true, false); kitBtn->textScale = 0.4f; kitBtn->setTooltip (help::forName ("CHOP KIT")); addAndMakeVisible (*kitBtn); sampGroup.push_back (kitBtn.get());
+    kitBtn->onClick = [this]
+    {
+        auto panel = std::make_unique<ui::KitPanel> (proc);
+        juce::CallOutBox::launchAsynchronously (std::move (panel), kitBtn->getScreenBounds(), nullptr);
+    };
     {
         auto mk = [this] (const char* text, const char* paramId, std::vector<juce::Component*>* set)
         {
@@ -817,7 +827,7 @@ void RelicEditor::resized()
     for (int i = 0; i < 4; ++i) K (adsr[i])->setBounds (R (556 + i * 92.0f, 486, 86, 156));
 
     // SAMPLER tab
-    sampDisp->setBounds (R (548, 156, 724, 158));
+    sampDisp->setBounds (R (548, 156, 724, 158)); kitBtn->setBounds (R (1196, 160, 72, 30));
     // Left: slot selector and the buttons of the slot being edited (the A and B sets share the same places). Right: a 6 x 2 knob grid.
     slotBtn[0]->setBounds (R (548, 394, 112, 38)); slotBtn[1]->setBounds (R (668, 394, 112, 38));
     sampButtons[0]->setBounds (R (548, 438, 112, 38));

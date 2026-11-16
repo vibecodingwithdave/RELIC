@@ -20,7 +20,12 @@ struct SampleData
     int frames() const { return (int) L.size(); }
 };
 
-struct PresetEntry { juce::String bank, name, category; juce::File file; };
+// Which part of the sound a preset holds. A "partial" preset carries only that part, and loading it leaves every other control as it is.
+enum class PresetPart { Full = 0, Synth, Sample, Mod, Effects, Notes };
+inline const juce::StringArray& presetPartNames() { static const juce::StringArray n { "Full", "Synth", "Sample", "Modulation", "Effects", "Arp & Chords" }; return n; }
+PresetPart presetPartOfParam (const juce::String& paramId);      // the part a control belongs to (never Full)
+
+struct PresetEntry { juce::String bank, name, category, part; juce::File file; };      // part: empty for a full preset, else its type name
 
 // The categories shown in the preset browser. A preset whose category is empty or unknown counts as "Other".
 inline const juce::StringArray& presetCategories()
@@ -61,8 +66,9 @@ public:
     static juce::File presetsRoot();
     std::vector<PresetEntry> scanPresets() const;                 // factory, user and imported presets on disk
     bool loadPresetFile (const juce::File& f);                    // message thread
+    bool loadPresetPart (const juce::XmlElement& xml, PresetPart part);   // applies only that part of a sound
     void initPreset();                                            // every control back to its default, no sample
-    juce::File savePreset (const juce::String& name, const juce::String& category = {});   // saves to Presets/User
+    juce::File savePreset (const juce::String& name, const juce::String& category = {}, PresetPart part = PresetPart::Full);   // saves to Presets/User
     juce::String getPresetName() const { return apvts.state.getProperty ("presetName", "Init").toString(); }
     juce::String getPresetBank() const { return apvts.state.getProperty ("presetBank", "").toString(); }
     juce::String getPresetCategory() const { return apvts.state.getProperty ("presetCategory", "").toString(); }
@@ -132,7 +138,8 @@ private:
         float ks[8192] {}; int ksPos = 0; float ksLp = 0.0f;                    // plucked-string model
         float bellAmp[6] {}; unsigned int nseed = 1;                            // bell model
         int zone = 0;                                                           // keyboard split: 0 none, 1 sample only, 2 synth only
-        bool chop = false; double sliceA = 0.0, sliceB = 0.0;   // chop voice: slice bounds in frames
+        bool chop = false; double sliceA = 0.0, sliceB = 0.0; int choke = 0; bool chopRev = false; double chopRateMul = 1.0; float chopMul = 1.0f;   // kit settings of the pad this voice plays
+          // chop voice: slice bounds in frames
         rf::Adsr env, menv[2];                           // amp envelope; two modulation envelopes
         rf::Adsr envA, envB, envT;                       // optional own envelopes of sample layers A and B and of the texture
         rf::Svf ftl, ftr;                                // the texture's own filter
@@ -175,6 +182,7 @@ private:
     Snap snapshot() const; void applySnap (const Snap&); void flushPending();
     std::vector<Snap> undoS, redoS; Snap cur, pending; int quiet = 0; juce::Random rng;
     std::array<std::atomic<float>*, 16> rhythmTypes {}, rhythmVelocities {}; std::array<std::atomic<float>*, 64> patSteps {}; std::array<std::atomic<float>*, 7> degShapes {};
+    std::array<std::atomic<float>*, 16> kitSlice {}, kitPitch {}, kitRev {}, kitLevel {}, kitChoke {};
     std::atomic<float>* p (const char* id) const { return apvts.getRawParameterValue (id); }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RelicProcessor)

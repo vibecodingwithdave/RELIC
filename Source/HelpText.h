@@ -98,6 +98,8 @@ inline const Table& params()
         { "chop_mode", "How the sample is cut: Even (equal parts), Onset (at the strongest hits) or Grid (on the tempo)." },
         { "chop_count", "How many slices the sample is cut into." },
         { "chop_grid", "The note length of each slice in Grid mode." },
+        { "preset_type", "Filter the list by type: full presets, or a partial preset that holds only the synth, sample, modulation, effects or arp and chord settings. Loading a partial preset changes only that part of the sound." },
+        { "CHOP KIT", "Chop kit: for each pad, choose which slice it plays, a pitch shift, reverse, a level and a choke group. Pads in one choke group cut each other off." },
         { "chop_pitch", "Shifts the pitch of the chop pads, in semitones." },
         // effects: tremolo, delay, compressor, crusher, panner
         { "trem_on", "Tremolo: turns the volume wobble on or off. Settings are on the FX tab." },

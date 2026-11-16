@@ -736,15 +736,17 @@ public:
         {
             if (r >= 0 && r < (int) shown.size() && proc.loadPresetFile (shown[(size_t) r].file)) updateSelection();
         };
-        const char* names[4] = { "SAVE AS", "INIT", "RESCAN", "CLOSE" };
-        for (int i = 0; i < 4; ++i)
+        const char* names[5] = { "SAVE AS", "INIT", "RESCAN", "TYPE: ALL", "CLOSE" };
+        for (int i = 0; i < 5; ++i)
         {
             btn[i] = std::make_unique<StoneButton> (names[i], true, false); btn[i]->textScale = 0.42f; addAndMakeVisible (*btn[i]);
         }
         btn[0]->onClick = [this] { if (onSave) onSave(); };
         btn[1]->onClick = [this] { proc.initPreset(); updateSelection(); };
         btn[2]->onClick = [this] { refresh(); };
-        btn[3]->onClick = [this] { if (onClose) onClose(); };
+        btn[3]->onClick = [this] { selPart = (selPart + 1) % (presetPartNames().size() + 1); btn[3]->setButtonText (selPart == 0 ? "TYPE: ALL" : "TYPE: " + presetPartNames()[selPart - 1].toUpperCase()); fillPresets(); };
+        btn[3]->setTooltip (help::forName ("preset_type"));
+        btn[4]->onClick = [this] { if (onClose) onClose(); };
     }
     std::function<void()> onSave, onClose;
     void refresh()
@@ -774,8 +776,8 @@ public:
         for (int i = 0; i < 9; ++i) chips[i]->setBounds (chipRow.removeFromLeft (chipRow.getWidth() / (9 - i)).reduced (1, 0));
         auto bottom = b.removeFromBottom (getHeight() / 10); b.removeFromBottom (getHeight() / 40);
         banks.setBounds (b.removeFromLeft (b.getWidth() * 40 / 100)); b.removeFromLeft (getWidth() / 60); presets.setBounds (b);
-        const int bw = bottom.getWidth() / 4;
-        for (int i = 0; i < 4; ++i) btn[i]->setBounds (bottom.removeFromLeft (bw).reduced (getWidth() / 90, 0));
+        const int bw = bottom.getWidth() / 5;
+        for (int i = 0; i < 5; ++i) btn[i]->setBounds (bottom.removeFromLeft (bw).reduced (getWidth() / 90, 0));
     }
     void updateSelection() { fillPresets(); }
 private:
@@ -789,13 +791,15 @@ private:
             const auto cat = presetCategories().contains (e.category) ? e.category : juce::String ("Other");
             if (selBank != 0 && e.bank != bankNames[selBank - 1]) continue;
             if (wanted.isNotEmpty() && cat != wanted) continue;
-            if (q.isNotEmpty() && ! (e.name + " " + cat + " " + e.bank).toLowerCase().contains (q)) continue;
-            if (e.name == proc.getPresetName() && e.bank == proc.getPresetBank()) sel = (int) shown.size();
-            shown.push_back (e); names.add (e.name);
+            if (selPart == 1 && e.part.isNotEmpty()) continue;
+            if (selPart > 1 && e.part != presetPartNames()[selPart - 1]) continue;
+            if (q.isNotEmpty() && ! (e.name + " " + cat + " " + e.bank + " " + e.part).toLowerCase().contains (q)) continue;
+            if (e.part.isEmpty() && e.name == proc.getPresetName() && e.bank == proc.getPresetBank()) sel = (int) shown.size();
+            shown.push_back (e); names.add (e.part.isNotEmpty() ? e.name + "   [" + e.part + "]" : e.name);
         }
         presets.setItems (names, sel); repaint();
     }
-    RelicProcessor& proc; TextList banks, presets; std::unique_ptr<StoneButton> btn[4];
+    RelicProcessor& proc; TextList banks, presets; std::unique_ptr<StoneButton> btn[5]; int selPart = 0;      // selPart: 0 all types, 1 full presets, 2.. one part
     juce::TextEditor search; std::unique_ptr<StoneButton> chips[9]; int selCat = 0;
     std::vector<PresetEntry> all, shown; juce::StringArray bankNames; int selBank = 0;
 };
@@ -922,6 +926,63 @@ private:
     juce::Rectangle<float> colBounds (int c) const { const auto b = grid(); const float w = (b.getWidth() - labelWidth()) / 22; return { b.getX() + labelWidth() + w * c, b.getY(), w, b.getHeight() }; }
     juce::Rectangle<float> cellBounds (int d, int c) const { const auto r = rowBounds (d), col = colBounds (c); return { col.getX(), r.getY(), col.getWidth(), r.getHeight() }; }
     void set (int d, int mask) { auto* p = proc.apvts.getParameter (pid (d)); p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 ((float) mask)); p->endChangeGesture(); repaint(); }
+};
+
+// CUSTOM chop kit: one row per pad (C1 upward) with the slice it plays, a pitch shift, reverse, a level and a choke group
+// (pads sharing a choke group cut each other off, like a closed and an open hat).
+class KitPanel : public juce::Component
+{
+public:
+    KitPanel (RelicProcessor& p) : proc (p)
+    {
+        static const char* names[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        for (int i = 0; i < 16; ++i)
+        {
+            auto& r = rows[(size_t) i]; const juce::String k = "chop_kit_" + juce::String (i + 1) + "_";
+            const int midi = RelicProcessor::kChopBase + i;
+            r.name.setText ("PAD " + juce::String (i + 1) + "  " + names[midi % 12] + juce::String (midi / 12 - 1), juce::dontSendNotification); r.name.setFont (juce::FontOptions (12.5f)); r.name.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0));
+            auto* ps = proc.apvts.getParameter (k + "slice"); r.slice.addItemList (ps->getAllValueStrings(), 1); r.sliceA = std::make_unique<juce::ComboBoxParameterAttachment> (*ps, r.slice);
+            auto* pc = proc.apvts.getParameter (k + "choke"); r.choke.addItemList (pc->getAllValueStrings(), 1); r.chokeA = std::make_unique<juce::ComboBoxParameterAttachment> (*pc, r.choke);
+            for (auto* sl : { &r.pitch, &r.level }) { sl->setSliderStyle (juce::Slider::LinearHorizontal); sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, 20); }
+            r.pitch.setTextValueSuffix (" st"); r.level.setTextValueSuffix (" dB"); r.level.setNumDecimalPlacesToDisplay (1);
+            r.pitchA = std::make_unique<juce::SliderParameterAttachment> (*proc.apvts.getParameter (k + "pitch"), r.pitch);
+            r.levelA = std::make_unique<juce::SliderParameterAttachment> (*proc.apvts.getParameter (k + "level"), r.level);
+            r.rev.setButtonText ("REV"); r.revA = std::make_unique<juce::ButtonParameterAttachment> (*proc.apvts.getParameter (k + "rev"), r.rev);
+            r.slice.setTooltip ("Which slice this pad plays: Own (the pad's own number), a slice 1 to 16, or Mute.");
+            r.choke.setTooltip ("Pads in the same choke group cut each other off. Off = never.");
+            for (juce::Component* c : { (juce::Component*) &r.name, (juce::Component*) &r.slice, (juce::Component*) &r.pitch, (juce::Component*) &r.rev, (juce::Component*) &r.level, (juce::Component*) &r.choke }) addAndMakeVisible (c);
+        }
+        for (auto* b : { &resetB, &reverseB }) addAndMakeVisible (b);
+        resetB.setButtonText ("RESET KIT"); reverseB.setButtonText ("REVERSE ORDER");
+        resetB.onClick = [this] { for (int i = 0; i < 16; ++i) { const juce::String k = "chop_kit_" + juce::String (i + 1) + "_"; for (auto* id : { "slice", "pitch", "rev", "level", "choke" }) setNorm (k + id, def (k + id)); } };
+        reverseB.onClick = [this]
+        {
+            const int n = juce::jlimit (2, 16, (int) proc.apvts.getRawParameterValue ("chop_count")->load());
+            for (int i = 0; i < 16; ++i) setNorm ("chop_kit_" + juce::String (i + 1) + "_slice", i < n ? (float) (n - i) / 17.0f : def ("chop_kit_" + juce::String (i + 1) + "_slice"));
+        };
+        setSize (660, 28 + 16 * 26 + 44);
+    }
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xff17131c)); g.setColour (juce::Colour (0xffe8e0b0)); g.setFont (juce::FontOptions (12.0f));
+        const int y = 6; g.drawText ("SLICE", 92, y, 70, 16, juce::Justification::centred); g.drawText ("PITCH", 170, y, 130, 16, juce::Justification::centred);
+        g.drawText ("LEVEL", 372, y, 130, 16, juce::Justification::centred); g.drawText ("CHOKE", 590, y, 60, 16, juce::Justification::centred);
+    }
+    void resized() override
+    {
+        for (int i = 0; i < 16; ++i)
+        {
+            auto& r = rows[(size_t) i]; const int y = 26 + i * 26;
+            r.name.setBounds (8, y, 82, 24); r.slice.setBounds (92, y + 1, 70, 22); r.pitch.setBounds (166, y, 168, 24); r.rev.setBounds (338, y, 56, 24); r.level.setBounds (396, y, 168, 24); r.choke.setBounds (590, y + 1, 60, 22);
+        }
+        resetB.setBounds (8, getHeight() - 36, 120, 28); reverseB.setBounds (136, getHeight() - 36, 140, 28);
+    }
+private:
+    struct Row { juce::Label name; juce::ComboBox slice, choke; juce::Slider pitch, level; juce::ToggleButton rev;
+                 std::unique_ptr<juce::ComboBoxParameterAttachment> sliceA, chokeA; std::unique_ptr<juce::SliderParameterAttachment> pitchA, levelA; std::unique_ptr<juce::ButtonParameterAttachment> revA; };
+    float def (const juce::String& id) const { return proc.apvts.getParameter (id)->getDefaultValue(); }
+    void setNorm (const juce::String& id, float v) { auto* q = proc.apvts.getParameter (id); q->beginChangeGesture(); q->setValueNotifyingHost (v); q->endChangeGesture(); }
+    RelicProcessor& proc; std::array<Row, 16> rows; juce::TextButton resetB, reverseB;
 };
 
 // Bars for one pass of the arpeggio on a demo triad; the bar for the step that just played lights up.
@@ -1232,7 +1293,7 @@ private:
     struct Pad { std::unique_ptr<ui::StoneButton> btn; std::unique_ptr<juce::ButtonParameterAttachment> att; const char* id; };
     std::vector<Pad> pads;
     std::unique_ptr<ui::StoneButton> waveLeft, waveRight, waveName, polyBtn, allOn, bypassFx;
-    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad;      // wavetable file strip on the OSC tab
+    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn;      // wavetable file strip on the OSC tab
     struct SyncChip { std::unique_ptr<ui::StoneButton> btn; juce::String knobId, syncId; };
     std::vector<SyncChip> syncChips; void updateSyncChips();        // a small note-value button on each rate / time knob that can follow the host tempo
     void showWavetableMenu(); void loadWavetableDialog(); void afterWavetableLoaded();
