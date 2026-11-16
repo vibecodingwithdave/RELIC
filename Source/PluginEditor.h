@@ -1072,6 +1072,9 @@ private:
     std::vector<juce::Component*> sampSetA, sampSetB, sampEnvVoice, sampEnvA, sampEnvB;
     std::vector<ui::Knob*> sampKnobsA, sampKnobsB, envKnobsVoice, envKnobsA, envKnobsB;
     void updateSamplerView();
+    // TEXTURE tab: grains page or own-file page
+    int texView = 0; std::unique_ptr<ui::StoneButton> texViewBtn[2], loadTex; std::vector<juce::Component*> texGrains, texShape, texOwnOnly;
+    void updateTextureView();
 
     // OSC tab
     std::unique_ptr<ui::WaveDisplay> wave; std::unique_ptr<ui::EnvDisplay> env; std::unique_ptr<ui::Meter> meter;

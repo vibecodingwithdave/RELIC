@@ -204,6 +204,23 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     flt ("tex_size_ms", "Texture Size Ms", 20.0f, 500.0f, 120.0f, 0.5f);
     flt ("tex_density", "Texture Density", 2.0f, 80.0f, 20.0f, 0.5f);
     flt ("tex_jitter_ct", "Texture Jitter Ct", 0.0f, 100.0f, 0.0f);
+    // The texture's own file, pitch and envelope. Off by default: the grains then come from sample A and follow its root, as before.
+    toggle ("tex_indep", "Texture Own File", false);
+    integer ("tex_root", "Texture Root", 0, 127, 60);
+    integer ("tex_octave", "Texture Octave", -2, 2, 0);
+    flt ("tex_tune_ct", "Texture Tune Ct", -100.0f, 100.0f, 0.0f);
+    toggle ("tex_normalize", "Texture Normalize", true);
+    toggle ("tex_env_own", "Texture Env Own", false);
+    flt ("tex_attack_ms", "Texture Attack Ms", 0.0f, 5000.0f, 5.0f, 0.3f);
+    flt ("tex_decay_ms", "Texture Decay Ms", 0.0f, 5000.0f, 200.0f, 0.3f);
+    flt ("tex_sustain", "Texture Sustain", 0.0f, 1.0f, 0.8f);
+    flt ("tex_release_ms", "Texture Release Ms", 0.0f, 5000.0f, 200.0f, 0.3f);
+    // Filtering and routing of the texture. Off / "With sample" by default: the texture is then filtered together with the samples, as before.
+    toggle ("tex_filter_on", "Texture Filter On", false);
+    choice ("tex_filter_type", "Texture Filter Type", { "LP", "HP", "BP", "Notch" }, 0);
+    flt ("tex_cutoff_hz", "Texture Cutoff Hz", 20.0f, 20000.0f, 8000.0f, 0.3f);
+    flt ("tex_reso", "Texture Reso", 0.0f, 1.0f, 0.1f);
+    choice ("tex_route", "Texture Route", { "With sample", "Dry" }, 0);          // Dry: the texture skips the voice filter
     flt ("loop_start", "Loop Start", 0.0f, 1.0f, 0.0f);
     flt ("loop_end", "Loop End", 0.0f, 1.0f, 1.0f);
     choice ("loop_xfade", "Loop Xfade", { "Off", "5 ms", "10 ms", "20 ms", "50 ms", "100 ms", "200 ms", "500 ms" }, 0);
@@ -262,12 +279,12 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     return { v.begin(), v.end() };
 }
 
-bool RelicProcessor::loadSampleFile (const juce::File& f, bool setMixToSample, bool slotB)
+std::shared_ptr<SampleData> RelicProcessor::decodeSample (const juce::File& f)
 {
     juce::AudioFormatManager fm; fm.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
-    if (r == nullptr || r->lengthInSamples < 2) { sampleError = "Couldn't read that file"; return false; }
-    if (r->lengthInSamples > (juce::int64) (r->sampleRate * 600.0)) { sampleError = "That sample is longer than 10 minutes"; return false; }
+    if (r == nullptr || r->lengthInSamples < 2) { sampleError = "Couldn't read that file"; return nullptr; }
+    if (r->lengthInSamples > (juce::int64) (r->sampleRate * 600.0)) { sampleError = "That sample is longer than 10 minutes"; return nullptr; }
     const int n = (int) r->lengthInSamples;
     juce::AudioBuffer<float> buf (juce::jmax (1, (int) r->numChannels), n);
     r->read (&buf, 0, n, 0, true, true);
@@ -299,6 +316,12 @@ bool RelicProcessor::loadSampleFile (const juce::File& f, bool setMixToSample, b
         // the onset is where the rise began: step back to the local minimum of the envelope (at most 3 hops)
         for (int b : kept) { int s0 = b; while (s0 > 0 && b - s0 < 3 && env[(size_t) (s0 - 1)] < env[(size_t) s0]) --s0; d->onsets.push_back ((float) (s0 * hop) / (float) n); }
     }
+    return d;
+}
+
+bool RelicProcessor::loadSampleFile (const juce::File& f, bool setMixToSample, bool slotB)
+{
+    auto d = decodeSample (f); if (d == nullptr) return false;
     if (slotB)
     {
         { const juce::SpinLock::ScopedLockType l (sampleLock); sampleB = d; }
@@ -316,6 +339,18 @@ void RelicProcessor::clearSampleB()
 {
     { const juce::SpinLock::ScopedLockType l (sampleLock); sampleB.reset(); }
     apvts.state.removeProperty ("samplePathB", nullptr);
+}
+
+bool RelicProcessor::loadTextureFile (const juce::File& f)
+{
+    auto d = decodeSample (f); if (d == nullptr) return false;
+    { const juce::SpinLock::ScopedLockType l (sampleLock); sampleT = d; }
+    sampleError = {}; apvts.state.setProperty ("samplePathT", f.getFullPathName(), nullptr); return true;
+}
+void RelicProcessor::clearTexture()
+{
+    { const juce::SpinLock::ScopedLockType l (sampleLock); sampleT.reset(); }
+    apvts.state.removeProperty ("samplePathT", nullptr);
 }
 
 void RelicProcessor::clearSample()
@@ -408,6 +443,7 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
     if (samplePath.isNotEmpty() && sf.existsAsFile()) loadSampleFile (sf, false);
     else { clearSample(); if (samplePath.isNotEmpty()) sampleError = "Sample not found: " + sf.getFileName(); }
     { const auto pb = xml->getStringAttribute ("samplePathB"); juce::File fb (pb); if (pb.isNotEmpty() && fb.existsAsFile()) loadSampleFile (fb, false, true); else clearSampleB(); }
+    { const auto pt = xml->getStringAttribute ("samplePathT"); juce::File ft (pt); if (pt.isNotEmpty() && ft.existsAsFile()) loadTextureFile (ft); else clearTexture(); }
     apvts.state.setProperty ("presetName", xml->getStringAttribute ("presetName", f.getFileNameWithoutExtension()), nullptr);
     apvts.state.setProperty ("presetCategory", xml->getStringAttribute ("category"), nullptr);
     apvts.state.setProperty ("presetBank", f.getParentDirectory().getRelativePathFrom (presetsRoot()).replaceCharacter ('\\', '/'), nullptr);
@@ -416,7 +452,7 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
 
 void RelicProcessor::initPreset()
 {
-    resetAllParameters (*this); clearSample(); clearSampleB(); sampleError = {};
+    resetAllParameters (*this); clearSample(); clearSampleB(); clearTexture(); sampleError = {};
     apvts.state.setProperty ("presetName", "Init", nullptr); apvts.state.setProperty ("presetBank", "", nullptr); apvts.state.setProperty ("presetCategory", "", nullptr);
 }
 
@@ -595,6 +631,7 @@ void RelicProcessor::noteOn (int note, float vel)
       for (int k = 0; k < 6; ++k) { vo.bellAmp[k] = 1.0f; vo.phase[k] = 0.0; } }
     vo.menv[0].level = vo.menv[1].level = 0.0f; vo.menv[0].noteOn(); vo.menv[1].noteOn();
     vo.envA.level = vo.envB.level = 0.0f; vo.envA.noteOn(); vo.envB.noteOn();
+    vo.envT.level = 0.0f; vo.envT.noteOn(); vo.ftl.reset(); vo.ftr.reset();
     vo.env.noteOn();
 }
 
@@ -645,7 +682,8 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
     const bool indepSel = p ("sampleb_indep")->load() > 0.5f;
     const bool indepB = indepSel && smpB != nullptr && smpB->frames() > 1;           // slot B plays as its own layer
     const float mix = p ("synth_mix")->load();
-    const float synthGain = (haveS || indepB) ? mix : 1.0f;
+    const auto* smpTx = audioSampleT.get(); const bool indepT = p ("tex_indep")->load() > 0.5f && smpTx != nullptr && smpTx->frames() > 1;   // the texture plays from its own file
+    const float synthGain = (haveS || indepB || indepT) ? mix : 1.0f;
     float sampleGainFull = 0.0f;
     float sampleGain = 0.0f, rootSemis = 0.0f; double nF = 0, loopA = 0, loopB = 0; bool loopOn = false, rev = false; double rateRatio = 1.0, xfF = 0.0; float chopGain = 0.0f, chopRate = 1.0f;
     SampleRegion rgA; double tuneMulA = 1.0;
@@ -693,9 +731,21 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
     const bool ownA = p ("sample_env_own")->load() > 0.5f, ownB = indepB && p ("sampleb_env_own")->load() > 0.5f;
     const float envAp[4] = { p ("sample_attack_ms")->load(), p ("sample_decay_ms")->load(), p ("sample_sustain")->load(), p ("sample_release_ms")->load() };
     const float envBp[4] = { p ("sampleb_attack_ms")->load(), p ("sampleb_decay_ms")->load(), p ("sampleb_sustain")->load(), p ("sampleb_release_ms")->load() };
-    const float texLevel = p ("tex_level")->load(); const bool texOn = haveS && texLevel > 0.0f;
+    // The texture's grains come from sample A (and follow its root) unless the texture has its own file.
+    const bool texIndep = p ("tex_indep")->load() > 0.5f; const auto* smpT = audioSampleT.get();
+    const SampleData* tsmp = texIndep ? smpT : smp; const bool tsOk = tsmp != nullptr && tsmp->frames() > 1;
+    const float texLevel = p ("tex_level")->load(); const bool texOn = tsOk && texLevel > 0.0f;
+    const double nTex = tsOk ? (double) tsmp->frames() : 0.0, texRate = tsOk ? tsmp->rate / sr : 1.0;
+    const float texRoot = texIndep ? (float) ((int) p ("tex_root")->load() - 12 * (int) p ("tex_octave")->load()) : rootSemis;
+    const double texTuneMul = texIndep ? std::exp2 ((double) p ("tex_tune_ct")->load() / 1200.0) : 1.0;
+    const bool texNorm = (texIndep ? p ("tex_normalize")->load() : p ("sample_normalize")->load()) > 0.5f;
+    const bool ownT = texIndep && p ("tex_env_own")->load() > 0.5f;
+    const float envTp[4] = { p ("tex_attack_ms")->load(), p ("tex_decay_ms")->load(), p ("tex_sustain")->load(), p ("tex_release_ms")->load() };
+    const bool texFiltOn = p ("tex_filter_on")->load() > 0.5f, texDry = (int) p ("tex_route")->load() == 1; const int texFiltType = (int) p ("tex_filter_type")->load();
+    const bool texSep = texFiltOn || texDry;     // the texture is mixed separately only when it is filtered or routed dry
+    const float texCut = p ("tex_cutoff_hz")->load(), texQ = rf::resonanceToQ (p ("tex_reso")->load());
     const float texPos = p ("tex_pos")->load(), texSpread = p ("tex_spread")->load(), texSize = p ("tex_size_ms")->load(), texDens = p ("tex_density")->load(), texJit = p ("tex_jitter_ct")->load();
-    const float texGain = texLevel * (p ("sample_normalize")->load() > 0.5f && haveS ? 1.0f / smp->peak : 1.0f) * 0.7f / std::sqrt (std::max (1.0f, texDens * texSize * 0.001f));
+    const float texGain = texLevel * (texNorm && tsOk ? 1.0f / tsmp->peak : 1.0f) * 0.7f / std::sqrt (std::max (1.0f, texDens * texSize * 0.001f));
     const float pwN = (pw0 - 0.05f) / 0.9f;
     float bellDk[6]; for (int k = 0; k < 6; ++k) bellDk[k] = std::exp (-1.0f / (((0.4f + 5.0f * pwN) / (1.0f + 1.2f * (float) k)) * (float) sr));
     const float normEff = shape >= 5 ? 1.0f : norm;
@@ -749,6 +799,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
         const float vSampB = vo.zone == 1 ? gainBFull : (vo.zone == 2 ? 0.0f : gainBMix);
         auto setupF = [&] (float c_, float q_) { vo.fl.setup (c_, q_, sr); vo.fr.setup (c_, q_, sr); if (fModel == 2) { vo.fl2.setup (c_, q_, sr); vo.fr2.setup (c_, q_, sr); } };
         if (fOn) setupF (cutoff, q);
+        if (texFiltOn) { vo.ftl.setup (texCut, texQ, sr); vo.ftr.setup (texCut, texQ, sr); }
         for (int i = 0; i < n; ++i)
         {
             float mc = 0, mr = 0, mp = 0, ml = 0, mw = 0, ev[2] = { 0.0f, 0.0f };
@@ -760,6 +811,8 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             float ea = 1.0f, eb = 1.0f;       // own envelopes of the sample layers (1 when off)
             if (ownA) { if (vo.env.stage == rf::Adsr::Release && vo.envA.stage != rf::Adsr::Release && vo.envA.stage != rf::Adsr::Idle) vo.envA.noteOff(); ea = vo.envA.next (envAp[0], envAp[1], envAp[2], envAp[3], sr); }
             if (ownB) { if (vo.env.stage == rf::Adsr::Release && vo.envB.stage != rf::Adsr::Release && vo.envB.stage != rf::Adsr::Idle) vo.envB.noteOff(); eb = vo.envB.next (envBp[0], envBp[1], envBp[2], envBp[3], sr); }
+            float et = 1.0f;
+            if (ownT) { if (vo.env.stage == rf::Adsr::Release && vo.envT.stage != rf::Adsr::Release && vo.envT.stage != rf::Adsr::Idle) vo.envT.noteOff(); et = vo.envT.next (envTp[0], envTp[1], envTp[2], envTp[3], sr); }
             for (int k = 0; k < nSlots; ++k)
             {
                 const int sc = slots[k].src;
@@ -776,6 +829,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             const double pf = semis != 0.0f ? (double) std::exp2 (semis / 12.0f) : 1.0;
             const float pw = juce::jlimit (0.05f, 0.95f, pw0 + 0.45f * mw), lvl = juce::jlimit (0.0f, 2.0f, 1.0f + ml);
             float l = 0.0f, r = 0.0f, pl = 0.0f, pr = 0.0f;       // pl/pr: the sample's share, kept apart so the filter can treat it separately
+            float tl = 0.0f, tr = 0.0f, dtl = 0.0f, dtr = 0.0f;   // the texture when it is filtered or routed dry (tl/tr), and its dry share (dtl/dtr)
             if (shape >= 5)
             {
                 const double hz = vo.baseHz * pf; float s = 0.0f;
@@ -901,7 +955,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
             }
             if (texOn && ! vo.chop && vo.zone != 2)
             {
-                const int nn = smp->frames();
+                const int nn = tsmp->frames();
                 vo.grainTimer -= 1.0f;
                 if (vo.grainTimer <= 0.0f)
                 {
@@ -911,8 +965,8 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                     for (auto& g : vo.grains) if (! g.on)
                     {
                         g.on = true; g.age = 0; g.len = std::max (64, (int) (texSize * 0.001 * sr));
-                        g.pos = (float) juce::jlimit (0.0, nF - 2.0, (double) (texPos + (r2 * 2.0f - 1.0f) * texSpread * 0.5f) * nF);
-                        g.step = (float) (std::pow (2.0, ((double) vo.note - rootSemis) / 12.0 + (double) ((r3 * 2.0f - 1.0f) * texJit / 1200.0f)) * rateRatio * pf);
+                        g.pos = (float) juce::jlimit (0.0, nTex - 2.0, (double) (texPos + (r2 * 2.0f - 1.0f) * texSpread * 0.5f) * nTex);
+                        g.step = (float) (std::pow (2.0, ((double) vo.note - texRoot) / 12.0 + (double) ((r3 * 2.0f - 1.0f) * texJit / 1200.0f)) * texRate * pf * texTuneMul);
                         const float a = (1.0f + (r1 * 2.0f - 1.0f) * 0.6f) * (float) (rf::kPi / 4.0); g.gl = std::cos (a) * 1.41421356f; g.gr = std::sin (a) * 1.41421356f;
                         break;
                     }
@@ -920,9 +974,15 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                 for (auto& g : vo.grains) if (g.on)
                 {
                     const float wgt = 0.5f - 0.5f * std::cos (2.0f * (float) rf::kPi * (float) g.age / (float) g.len) ;
-                    pl += cubic (smp->L, g.pos, nn) * wgt * g.gl * texGain * vo.velocity; pr += cubic (smp->R, g.pos, nn) * wgt * g.gr * texGain * vo.velocity;
+                    const float xl = cubic (tsmp->L, g.pos, nn) * wgt * g.gl * texGain * vo.velocity * et, xr = cubic (tsmp->R, g.pos, nn) * wgt * g.gr * texGain * vo.velocity * et;
+                    if (texSep) { tl += xl; tr += xr; } else { pl += xl; pr += xr; }
                     g.pos += g.step; if (++g.age >= g.len || g.pos >= (float) nn - 2.0f) g.on = false;
                 }
+            }
+            if (texSep)       // own filter, then either with the samples (through the voice filter) or dry (after it)
+            {
+                if (texFiltOn) { tl = vo.ftl.process (tl, texFiltType); tr = vo.ftr.process (tr, texFiltType); }
+                if (texDry) { dtl = tl; dtr = tr; } else { pl += tl; pr += tr; }
             }
             if (fOn)
             {
@@ -941,6 +1001,7 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                 else { l += run (pl, vo.fl, vo.fl2, vo.mpL); r += run (pr, vo.fr, vo.fr2, vo.mpR); }
             }
             else { l += pl; r += pr; }
+            l += dtl; r += dtr;       // the dry texture bypasses the voice filter
             const float e = vo.env.next (aMs, dMs, sus, rMs, sr);
             L[i] += l * e; R[i] += r * e;
         }
@@ -960,7 +1021,7 @@ static inline float safe (float x)
 void RelicProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
-    { const juce::SpinLock::ScopedTryLockType l (sampleLock); if (l.isLocked()) { audioSample = sample; audioSampleB = sampleB; } }
+    { const juce::SpinLock::ScopedTryLockType l (sampleLock); if (l.isLocked()) { audioSample = sample; audioSampleB = sampleB; audioSampleT = sampleT; } }
     const int N = buffer.getNumSamples();
     buffer.clear();
     float* L = buffer.getWritePointer (0);
@@ -1067,6 +1128,8 @@ void RelicProcessor::setStateInformation (const void* data, int size)
             if (path.isNotEmpty()) { juce::File f (path); if (f.existsAsFile()) loadSampleFile (f, false); else sampleError = "Sample not found: " + f.getFileName(); }
             const auto pathB = apvts.state.getProperty ("samplePathB").toString();
             if (pathB.isNotEmpty()) { juce::File f (pathB); if (f.existsAsFile()) loadSampleFile (f, false, true); }
+            const auto pathT = apvts.state.getProperty ("samplePathT").toString();
+            if (pathT.isNotEmpty()) { juce::File f (pathT); if (f.existsAsFile()) loadTextureFile (f); }
         }
 }
 
@@ -1079,7 +1142,7 @@ uint64_t RelicProcessor::displayStateKey() const
     auto mix = [&h] (uint64_t v) { h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2); };
     for (auto* prm : getParameters()) { const float v = prm->getValue(); uint32_t bits = 0; std::memcpy (&bits, &v, sizeof (bits)); mix (bits); }
     mix ((uint64_t) (arpStepShown.load() + 2)); mix ((uint64_t) (chordDegreeShown.load() + 2)); mix (arpWaitingShown.load() ? 1u : 0u);
-    mix ((uint64_t) (hostBpm * 10.0)); mix ((uint64_t) (uintptr_t) getSample().get()); mix ((uint64_t) (uintptr_t) getSampleB().get());
+    mix ((uint64_t) (hostBpm * 10.0)); mix ((uint64_t) (uintptr_t) getSample().get()); mix ((uint64_t) (uintptr_t) getSampleB().get()); mix ((uint64_t) (uintptr_t) getSampleT().get());
     return h;
 }
 

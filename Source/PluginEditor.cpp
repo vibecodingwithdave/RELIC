@@ -349,7 +349,30 @@ RelicEditor::RelicEditor (RelicProcessor& p)
 
     // ---- TEXTURE tab (opened from the Textures icon in the sidebar) ----
     for (auto k : { std::make_pair ("tex_level", "Level"), { "tex_pos", "Position" }, { "tex_spread", "Spread" }, { "tex_size_ms", "Grain" }, { "tex_density", "Density" }, { "tex_jitter_ct", "Jitter" } })
-        texGroup.push_back (addKnob (k.first, k.second));
+        { auto* kn = addKnob (k.first, k.second); texGroup.push_back (kn); texGrains.push_back (kn); }
+    {
+        const char* vn[2] = { "GRAINS", "SHAPE" };
+        for (int i = 0; i < 2; ++i)
+        {
+            texViewBtn[i] = std::make_unique<ui::StoneButton> (vn[i], true, false); texViewBtn[i]->textScale = 0.4f; texViewBtn[i]->setTooltip (help::forName (vn[i]));
+            texViewBtn[i]->onClick = [this, i] { texView = i; updateTextureView(); repaint(); }; addAndMakeVisible (*texViewBtn[i]); texGroup.push_back (texViewBtn[i].get());
+        }
+        texGroup.push_back (addNoteToggle ("tex_indep", "OWN FILE", 0.38f));
+        loadTex = std::make_unique<ui::StoneButton> ("LOAD TEXTURE", true, false); loadTex->textScale = 0.3f; loadTex->setTooltip (help::forName ("LOAD TEXTURE")); addAndMakeVisible (*loadTex); texGroup.push_back (loadTex.get());
+        loadTex->onClick = [this]
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Choose a file for the texture", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg;*.m4a");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
+            { auto f = fc.getResult(); if (f.existsAsFile() && proc.loadTextureFile (f)) { if (auto* q = proc.apvts.getParameter ("tex_indep")) q->setValueNotifyingHost (1.0f); repaint(); } });
+        };
+        auto add = [this] (juce::Component* c, bool ownOnly) { texGroup.push_back (c); texShape.push_back (c); if (ownOnly) texOwnOnly.push_back (c); };
+        add (addStepper ("tex_root", "Root", texGroup), true); add (addStepper ("tex_octave", "Octave", texGroup), true);
+        add (addKnob ("tex_tune_ct", "Tune"), true); add (addNoteToggle ("tex_normalize", "NORMALIZE", 0.3f), true);
+        add (addNoteToggle ("tex_env_own", "OWN ENVELOPE", 0.28f), true);
+        for (auto k : { std::make_pair ("tex_attack_ms", "Attack"), { "tex_decay_ms", "Decay" }, { "tex_sustain", "Sustain" }, { "tex_release_ms", "Release" } }) add (addKnob (k.first, k.second), true);
+        add (addNoteToggle ("tex_filter_on", "FILTER", 0.36f), false); add (addStepper ("tex_filter_type", "Type", texGroup), false);
+        add (addKnob ("tex_cutoff_hz", "Cutoff"), false); add (addKnob ("tex_reso", "Reso"), false); add (addStepper ("tex_route", "Route", texGroup), false);
+    }
 
     // ---- XY pad overlay (double-click the picture to open it) ----
     xyPad = std::make_unique<ui::XyPad> (proc); xyPad->onDoubleClick = [this] { showXy (false); }; addChildComponent (*xyPad);
@@ -538,6 +561,16 @@ void RelicEditor::updateSamplerView()
     sampDisp->setSlot (sampSlot);
 }
 
+void RelicEditor::updateTextureView()
+{
+    if (currentTab != 11 || texViewBtn[0] == nullptr) return;
+    for (auto* c : texGrains) c->setVisible (texView == 0);
+    for (auto* c : texShape) c->setVisible (texView == 1);
+    const bool own = proc.apvts.getRawParameterValue ("tex_indep")->load() > 0.5f;
+    for (auto* c : texOwnOnly) c->setAlpha (own ? 1.0f : 0.45f);   // these only count once the texture plays its own file
+    for (int i = 0; i < 2; ++i) texViewBtn[i]->setToggleState (i == texView, juce::dontSendNotification);
+}
+
 void RelicEditor::setTab (int t)
 {
     currentTab = t;
@@ -555,6 +588,7 @@ void RelicEditor::setTab (int t)
     for (auto* c : envGroup) c->setVisible (t == 9);
     for (auto* c : fx4Group) c->setVisible (t == 10);
     for (auto* c : texGroup) c->setVisible (t == 11);
+    updateTextureView();
     updateSamplerView();
     repaint();
 }
@@ -564,7 +598,7 @@ void RelicEditor::timerCallback()
     noteToggles["arp_run"]->setButtonText (proc.apvts.getRawParameterValue ("arp_run")->load() > 0.5f ? "GO" : "STOP");
     fxAB->setButtonText (proc.fxSlotActive() == 0 ? "EFFECTS A" : "EFFECTS B"); fxAB->setToggleState (proc.fxSlotActive() == 1, juce::dontSendNotification);
     splitBtn->setButtonText (proc.apvts.getRawParameterValue ("split_on")->load() > 0.5f ? "SPLIT " + juce::MidiMessage::getMidiNoteName ((int) proc.apvts.getRawParameterValue ("split_note")->load(), true, true, 3) : juce::String ("SPLIT"));
-    updateSamplerView();
+    updateSamplerView(); updateTextureView();
     proc.historyTick(); undoBtn->setEnabled (proc.canUndo()); redoBtn->setEnabled (proc.canRedo()); lockFxBtn->setToggleState (proc.lockFx.load(), juce::dontSendNotification);
     if (proc.getPresetName() != lastPresetName) { lastPresetName = proc.getPresetName(); repaint (R (600, 690, 590, 52)); }
     if (auto* c = choiceParam (proc.apvts, "waveform")) waveName->setButtonText (c->getCurrentChoiceName().toUpperCase());
@@ -621,7 +655,7 @@ void RelicEditor::paint (juce::Graphics& g)
     {
         g.setColour (display); g.fillRoundedRectangle (556, 170, 716, 462, 8.0f); g.setColour (goldDim); g.drawRoundedRectangle (556, 170, 716, 462, 8.0f, 2.0f);
         g.setColour (parchment); ui::drawText (g, "TEXTURE", juce::Rectangle<float> (556, 176, 716, 28), 22, juce::Justification::centred);
-        g.setColour (lime.withAlpha (0.7f)); ui::drawText (g, proc.getSample() ? "A CLOUD OF GRAINS FROM THE LOADED SAMPLE, PLAYED BY THE KEYS" : "LOAD A SAMPLE ON THE SAMPLER TAB FIRST", juce::Rectangle<float> (556, 214, 716, 22), 14, juce::Justification::centred);
+        g.setColour (lime.withAlpha (0.7f)); ui::drawText (g, (proc.apvts.getRawParameterValue ("tex_indep")->load() > 0.5f ? (proc.getSampleT() ? "A CLOUD OF GRAINS FROM THE TEXTURE FILE" : "OWN FILE IS ON: LOAD A TEXTURE FILE") : (proc.getSample() ? "A CLOUD OF GRAINS FROM THE LOADED SAMPLE, PLAYED BY THE KEYS" : "LOAD A SAMPLE ON THE SAMPLER TAB FIRST")), juce::Rectangle<float> (556, 214, 716, 22), 14, juce::Justification::centred);
     }
     if (currentTab == 10)
     {
@@ -767,8 +801,17 @@ void RelicEditor::resized()
     xyPad->setBounds (R (124, 112, 384, 426)); K ("macro_1")->setBounds (R (168, 412, 120, 120)); K ("macro_2")->setBounds (R (346, 412, 120, 120));
 
     // TEXTURE tab
+    texViewBtn[0]->setBounds (R (566, 246, 130, 38)); texViewBtn[1]->setBounds (R (704, 246, 130, 38));
+    noteToggles["tex_indep"]->setBounds (R (860, 246, 170, 38)); loadTex->setBounds (R (1040, 246, 220, 38));
     { const char* ids[6] = { "tex_level", "tex_pos", "tex_spread", "tex_size_ms", "tex_density", "tex_jitter_ct" };
-      for (int i = 0; i < 6; ++i) K (ids[i])->setBounds (R (580 + (i % 3) * 230.0f, 256 + (i / 3) * 190.0f, 170, 176)); }
+      for (int i = 0; i < 6; ++i) K (ids[i])->setBounds (R (580 + (i % 3) * 230.0f, 300 + (i / 3) * 166.0f, 170, 156)); }
+    steppers["tex_root"]->setBounds (R (566, 298, 170, 70)); steppers["tex_octave"]->setBounds (R (744, 298, 170, 70));
+    noteToggles["tex_normalize"]->setBounds (R (930, 314, 150, 38)); K ("tex_tune_ct")->setBounds (R (1110, 292, 100, 116));
+    noteToggles["tex_env_own"]->setBounds (R (566, 440, 150, 38));
+    { const char* ids[4] = { "tex_attack_ms", "tex_decay_ms", "tex_sustain", "tex_release_ms" };
+      for (int i = 0; i < 4; ++i) K (ids[i])->setBounds (R (730 + i * 130.0f, 416, 100, 108)); }
+    noteToggles["tex_filter_on"]->setBounds (R (566, 566, 110, 38)); steppers["tex_filter_type"]->setBounds (R (684, 548, 150, 70));
+    K ("tex_cutoff_hz")->setBounds (R (846, 530, 100, 100)); K ("tex_reso")->setBounds (R (954, 530, 100, 100)); steppers["tex_route"]->setBounds (R (1070, 548, 190, 70));
 
     // ENV tab
     for (int n = 1; n <= 2; ++n)

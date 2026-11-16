@@ -71,6 +71,10 @@ public:
     bool loadSampleFile (const juce::File& f, bool setMixToSample = true, bool slotB = false);      // message thread
     void clearSampleB();
     std::shared_ptr<const SampleData> getSampleB() const { const juce::SpinLock::ScopedLockType l (sampleLock); return sampleB; }
+    std::shared_ptr<const SampleData> getSampleT() const { const juce::SpinLock::ScopedLockType l (sampleLock); return sampleT; }
+    bool loadTextureFile (const juce::File& f);
+    std::shared_ptr<SampleData> decodeSample (const juce::File& f);      // reads and analyses a file; sets sampleError and returns null on failure
+    void clearTexture();
     void clearSample();
     std::shared_ptr<const SampleData> getSample() const { const juce::SpinLock::ScopedLockType l (sampleLock); return sample; }
     juce::String sampleError;
@@ -119,7 +123,8 @@ private:
         int zone = 0;                                                           // keyboard split: 0 none, 1 sample only, 2 synth only
         bool chop = false; double sliceA = 0.0, sliceB = 0.0;   // chop voice: slice bounds in frames
         rf::Adsr env, menv[2];                           // amp envelope; two modulation envelopes
-        rf::Adsr envA, envB;                             // optional own envelopes of sample layers A and B
+        rf::Adsr envA, envB, envT;                       // optional own envelopes of sample layers A and B and of the texture
+        rf::Svf ftl, ftr;                                // the texture's own filter
         rf::Svf fl, fr, fl2, fr2; float mpL = 0.0f, mpR = 0.0f;   // fl2/fr2: second pole pair for the cascaded models; mp*: MPC60 output low-pass state
     };
     static constexpr int MaxVoices = 16;
@@ -131,6 +136,7 @@ private:
     mutable juce::SpinLock sampleLock;
     std::shared_ptr<const SampleData> sample, audioSample;   // audioSample is the audio thread's copy
     std::shared_ptr<const SampleData> sampleB, audioSampleB;  // slot B (A/B morph)
+    std::shared_ptr<const SampleData> sampleT, audioSampleT;  // the texture's own file (used when "tex_indep" is on)
     rf::WaveTables tables;
     rf::Tremolo trem; rf::Panner panner; rf::PingPongDelay delay; rf::Compressor comp; rf::Crusher crush; rf::Chorus chorus; rf::Flanger flanger; rf::Reverb reverb;
     rf::Equalizer eq; rf::Tape tape; rf::Widener widener; rf::Wah wah; rf::LoFi lofi; rf::Ott ott; rf::PitchDelay pdelay; rf::TalkBox talk; rf::SpectralGate sgate; std::vector<int> leadHeld;
