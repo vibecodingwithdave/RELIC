@@ -140,6 +140,10 @@ private:
     void noteOn (int note, float vel);
     void noteOff (int note);
     void renderSegment (float* L, float* R, int n);
+    // Where a sample slot plays, in frames. "Trimmed" means an End point has been set; with End at its default the region is the old one
+    // (forward: Start to the last frame, reverse: last frame back to the beginning, Start ignored), so existing presets render as before.
+    struct SampleRegion { double startRaw = 0.0, startF = 0.0, endF = 0.0, revFloor = 0.0; bool trimmed = false; };
+    SampleRegion sampleRegion (double nF, const char* startId, const char* endId) const;
     float oscSample (int shape, double phase, double hz, float pw) const;
 
     std::vector<float> fxSlot[2]; int fxActive = 0;

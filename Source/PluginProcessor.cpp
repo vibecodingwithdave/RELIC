@@ -167,6 +167,8 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     toggle ("sample_reverse", "Sample Reverse", false);
     toggle ("sample_normalize", "Sample Normalize", true);
     flt ("sample_start", "Sample Start", 0.0f, 1.0f, 0.0f);
+    flt ("sample_end", "Sample End", 0.0f, 1.0f, 1.0f);                         // playback end, independent of the loop end
+    flt ("sample_tune_ct", "Sample Tune Ct", -100.0f, 100.0f, 0.0f);            // fine tuning of the sample, in cents
     flt ("sample_morph", "Sample Morph", 0.0f, 1.0f, 0.0f);                     // 0 = slot A, 1 = slot B
     // Texture layer (granular cloud from the loaded sample)
     flt ("tex_level", "Texture Level", 0.0f, 1.0f, 0.0f);
@@ -547,8 +549,8 @@ void RelicProcessor::noteOn (int note, float vel)
     vo.fl.reset(); vo.fr.reset(); vo.fl2.reset(); vo.fr2.reset(); vo.mpL = vo.mpR = 0.0f;
     if (audioSample != nullptr && audioSample->frames() > 1)
     {
-        const double n = (double) audioSample->frames();
-        vo.samplePos = p ("sample_reverse")->load() > 0.5f ? n - 1.0 : std::min (n - 2.0, (double) p ("sample_start")->load() * n);
+        const double n = (double) audioSample->frames(); const auto rg = sampleRegion (n, "sample_start", "sample_end");
+        vo.samplePos = p ("sample_reverse")->load() > 0.5f ? rg.endF : std::min ((rg.trimmed ? rg.endF : n) - 2.0, rg.startRaw);
         vo.sampleActive = true;
     }
     else vo.sampleActive = false;
@@ -578,6 +580,15 @@ void RelicProcessor::noteOff (int note)
     for (auto& vo : voices) if (vo.active && vo.note == note && vo.env.stage != rf::Adsr::Release) vo.env.noteOff();
 }
 
+RelicProcessor::SampleRegion RelicProcessor::sampleRegion (double nF, const char* startId, const char* endId) const
+{
+    SampleRegion r; r.startRaw = (double) p (startId)->load() * nF; r.startF = std::floor (r.startRaw);
+    r.trimmed = p (endId)->load() < 0.9999f;
+    r.endF = r.trimmed ? std::min (nF - 1.0, std::max (r.startF + 2.0, std::floor ((double) p (endId)->load() * nF))) : nF - 1.0;
+    r.revFloor = r.trimmed ? r.startF : 0.0;
+    return r;
+}
+
 void RelicProcessor::renderSegment (float* L, float* R, int n)
 {
     if (n <= 0) return;
@@ -599,15 +610,18 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
     const float synthGain = haveS ? mix : 1.0f;
     float sampleGainFull = 0.0f;
     float sampleGain = 0.0f, rootSemis = 0.0f; double nF = 0, loopA = 0, loopB = 0; bool loopOn = false, rev = false; double rateRatio = 1.0, xfF = 0.0; float chopGain = 0.0f, chopRate = 1.0f;
+    SampleRegion rgA; double tuneMulA = 1.0;
     if (haveS)
     {
         nF = (double) smp->frames();
         sampleGainFull = p ("sample_gain")->load() * (p ("sample_normalize")->load() > 0.5f ? 1.0f / smp->peak : 1.0f); sampleGain = (1.0f - mix) * sampleGainFull;
         rootSemis = (float) ((int) p ("sample_root")->load() - 12 * (int) p ("sample_octave")->load());
         loopOn = p ("sample_loop")->load() > 0.5f; rev = p ("sample_reverse")->load() > 0.5f;
+        rgA = sampleRegion (nF, "sample_start", "sample_end"); tuneMulA = std::exp2 ((double) p ("sample_tune_ct")->load() / 1200.0);
         loopA = std::floor ((double) p ("loop_start")->load() * nF);
+        if (rgA.trimmed && loopA > rgA.endF - 2.0) loopA = rgA.startF;                      // a loop that starts after the End point falls back to the whole played region
         loopB = std::max (loopA + 2.0, std::floor ((double) p ("loop_end")->load() * nF));
-        loopB = std::min (loopB, nF - 1.0);
+        loopB = std::min (loopB, rgA.endF);
         rateRatio = smp->rate / sr;
         { static const double xms[8] = { 0, 5, 10, 20, 50, 100, 200, 500 }; xfF = xms[juce::jlimit (0, 7, (int) p ("loop_xfade")->load())] * 0.001 * smp->rate; }
         chopGain = p ("sample_gain")->load() * (p ("sample_normalize")->load() > 0.5f ? 1.0f / smp->peak : 1.0f);
@@ -787,18 +801,18 @@ void RelicProcessor::renderSegment (float* L, float* R, int n)
                     sl = sl * (1.0f - morph) + bl * morph; sr_ = sr_ * (1.0f - morph) + br * morph;
                 }
                 pl += sl * vSamp * vo.velocity; pr += sr_ * vSamp * vo.velocity;
-                const double step = std::pow (2.0, ((double) vo.note - rootSemis) / 12.0) * rateRatio * pf;
+                const double step = std::pow (2.0, ((double) vo.note - rootSemis) / 12.0) * rateRatio * pf * tuneMulA;
                 if (! rev)
                 {
                     vo.samplePos += step;
                     if (loopOn) { if (vo.samplePos >= loopB) vo.samplePos = loopA + lxf + std::fmod (vo.samplePos - loopB, std::max (1.0, loopB - loopA - lxf)); }
-                    else if (vo.samplePos >= nF - 1.0) vo.sampleActive = false;
+                    else if (vo.samplePos >= rgA.endF) vo.sampleActive = false;
                 }
                 else
                 {
                     vo.samplePos -= step;
                     if (loopOn) { if (vo.samplePos <= loopA) vo.samplePos = loopB - std::fmod (loopA - vo.samplePos, loopB - loopA); }
-                    else if (vo.samplePos <= 0.0) vo.sampleActive = false;
+                    else if (vo.samplePos <= rgA.revFloor) vo.sampleActive = false;
                 }
             }
             if (texOn && ! vo.chop && vo.zone != 2)

@@ -59,6 +59,8 @@ inline const Table& params()
         { "sample_octave", "Shifts the sample up or down in octaves." },
         { "sample_gain", "Level of the sample." },
         { "sample_start", "Where in the sample playback starts." },
+        { "sample_end", "Where playback of the sample stops, independent of the loop end. At the far right it plays to the end of the file." },
+        { "sample_tune_ct", "Fine tuning of the sample, in cents (hundredths of a semitone)." },
         { "loop_start", "Where the loop begins inside the sample." },
         { "loop_end", "Where the loop ends inside the sample." },
         { "loop_xfade", "Loop fade: blends the end of the loop into its start so the loop point does not click. Off or 5 to 500 ms." },

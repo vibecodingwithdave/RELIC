@@ -20,10 +20,13 @@ def rewrap(raw, comp_new):
     xml = re.sub(r'(<IComponent>).*?(</IComponent>)', lambda m: m.group(1) + jencode(comp_new) + m.group(2), raw[8:].rstrip(b'\0').decode(), flags=re.S)
     body = xml.encode()
     return b'VC2!' + struct.pack('<I', len(body)) + body + b'\0'
-def edit_state(raw, params=None, sample_path=None, attrs=None):
+def edit_state(raw, params=None, sample_path=None, attrs=None, drop=None):
+    """drop: parameter ids to remove from the saved state, to mimic a project saved before those parameters existed."""
     raw = bytes(raw); xml, comp, size = unwrap(raw)
     inner = comp[8:8 + size]; tail = comp[8 + size:]
     nul = inner.endswith(b'\0'); root = ET.fromstring(inner.rstrip(b'\0').decode())
+    for e in list(root.findall('PARAM')):
+        if e.get('id') in (drop or ()): root.remove(e)
     for pid, val in (params or {}).items():
         for e in root.findall('PARAM'):
             if e.get('id') == pid: e.set('value', repr(float(val)))
