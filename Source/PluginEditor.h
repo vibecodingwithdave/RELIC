@@ -856,7 +856,7 @@ private:
         for (auto& name : childNames (parent))
         {
             auto path = parent.isEmpty() ? name : parent + "/" + name; auto label = name;
-            for (;;)      // a folder with nothing of its own and a single subfolder is shown as that subfolder ("Imported/Orbital" shows as "Orbital")
+            for (;;)      // a folder with nothing of its own and a single subfolder is shown as that subfolder ("Imported/Pack" shows as "Pack")
             {
                 const auto kids = childNames (path);
                 if (kids.size() != 1 || hasDirect (path)) break;
