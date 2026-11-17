@@ -589,7 +589,7 @@ std::vector<PresetEntry> RelicProcessor::scanPresets() const
         if (f.getFileName().startsWith (".")) continue;
         PresetEntry e; e.file = f; e.name = f.getFileNameWithoutExtension();
         e.bank = f.getParentDirectory().getRelativePathFrom (root).replaceCharacter ('\\', '/');
-        e.category = readCategory (f); e.part = readStateAttr (f, "partType");
+        e.category = readCategory (f); e.part = readStateAttr (f, "partType"); if (e.part == presetPartNames()[0]) e.part = {};      // a file that says "Full" is an ordinary preset
         out.push_back (e);
     }
     auto rank = [] (const juce::String& b) { return b == "Factory" ? 0 : (b == "User" ? 1 : 2); };

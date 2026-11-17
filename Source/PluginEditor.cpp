@@ -38,7 +38,7 @@ ui::Knob* RelicEditor::addKnob (const char* id, const char* name)
 
 void RelicEditor::showBrowser (bool show)
 {
-    if (show) { browser->refresh(); browser->setVisible (true); browser->toFront (false); }
+    if (show) { browser->refresh (true); browser->setVisible (true); browser->toFront (false); }
     else browser->setVisible (false);
 }
 

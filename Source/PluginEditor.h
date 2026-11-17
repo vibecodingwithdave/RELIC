@@ -749,7 +749,12 @@ public:
     explicit PresetBrowser (RelicProcessor& p) : proc (p)
     {
         addAndMakeVisible (banks); addAndMakeVisible (presets);
-        banks.onClick = [this] (int r) { selBank = r; fillPresets(); };
+        banks.onClick = [this] (int r)
+        {
+            if (r == 0) selNode = {};
+            else if (r - 1 < (int) rows.size()) { const auto& n = rows[(size_t) r - 1]; selNode = n.path; if (n.hasKids) { if (expanded.contains (n.path)) expanded.removeString (n.path); else expanded.add (n.path); } }
+            rebuildRows(); fillPresets();
+        };
         // search box
         search.setMultiLine (false); search.setReturnKeyStartsNewLine (false); search.setSelectAllWhenFocused (true);
         search.setTextToShowWhenEmpty ("Search presets", muted);
@@ -785,21 +790,26 @@ public:
         btn[4]->onClick = [this] { if (onClose) onClose(); };
     }
     std::function<void()> onSave, onClose;
-    void refresh()
+    // jumpToCurrent: the browser has just been opened, so show the loaded preset's folder (otherwise the folder only changes when the loaded preset is outside the one being viewed)
+    void refresh (bool jumpToCurrent = false)
     {
         all = proc.scanPresets(); bankNames.clear();
         for (auto& e : all) if (! bankNames.contains (e.bank)) bankNames.add (e.bank);
-        if (selBank > bankNames.size()) selBank = 0;
-        juce::StringArray items; items.add ("All  (" + juce::String ((int) all.size()) + ")");
-        for (auto& b : bankNames) { int n = 0; for (auto& e : all) if (e.bank == b) ++n; items.add (b.fromLastOccurrenceOf ("/", false, false) + "  (" + juce::String (n) + ")"); }
-        banks.setItems (items, selBank); fillPresets();
+        if (selNode.isNotEmpty() && std::none_of (all.begin(), all.end(), [this] (const PresetEntry& e) { return inside (e.bank, selNode); })) selNode = {};
+        const auto cb = proc.getPresetBank();
+        if (cb.isNotEmpty() && (jumpToCurrent ? selNode != cb : (selNode.isNotEmpty() && ! inside (cb, selNode))))
+        {
+            selNode = cb; juce::String acc;
+            for (auto& part : juce::StringArray::fromTokens (cb, "/", "")) { acc = acc.isEmpty() ? part : acc + "/" + part; if (! expanded.contains (acc)) expanded.add (acc); }
+        }
+        rebuildRows(); fillPresets();
     }
     void paint (juce::Graphics& g) override
     {
         auto b = getLocalBounds().toFloat();
         g.setColour (juce::Colour (0xff120f16)); g.fillRoundedRectangle (b.reduced (4.0f), 8.0f);
         if (skin().screen.isValid()) nineSlice (g, skin().screen, skin().screen.getBounds(), getLocalBounds(), 190, juce::jlimit (10, 34, (int) (getHeight() * 0.07f)));
-        g.setColour (gold); drawText (g, "PRESETS", juce::Rectangle<float> (0, (float) getHeight() * 0.045f, (float) getWidth(), (float) getHeight() * 0.07f), (float) getHeight() * 0.055f, juce::Justification::centred);
+        g.setColour (gold); drawText (g, titleText(), juce::Rectangle<float> (0, (float) getHeight() * 0.045f, (float) getWidth(), (float) getHeight() * 0.07f), (float) getHeight() * 0.055f, juce::Justification::centred);
         if (all.empty()) { g.setColour (muted); drawText (g, "No presets found. Press RESCAN.", getLocalBounds(), (float) getHeight() * 0.05f, juce::Justification::centred); }
         else if (shown.empty()) { g.setColour (muted); drawText (g, "No presets match.", presets.getBounds().reduced (10), (float) getHeight() * 0.045f, juce::Justification::centred); }
     }
@@ -817,6 +827,60 @@ public:
     }
     void updateSelection() { fillPresets(); }
 private:
+    struct Node { juce::String path, label; int depth = 0, count = 0; bool hasKids = false; };
+    static bool inside (const juce::String& bank, const juce::String& node) { return bank == node || bank.startsWith (node + "/"); }
+    juce::String titleText() const
+    {
+        const auto n = proc.getPresetName(); auto t = n.isEmpty() ? juce::String ("PRESETS") : "PRESETS  -  " + n;
+        return currentHidden ? t + "  (hidden by filters)" : t;
+    }
+    // The names one level below a folder ("" is the top), in display order: Factory, User, then the rest.
+    juce::StringArray childNames (const juce::String& parent) const
+    {
+        juce::StringArray out;
+        for (auto& b : bankNames)
+        {
+            if (parent.isNotEmpty() && ! b.startsWith (parent + "/")) continue;
+            const auto first = (parent.isEmpty() ? b : b.substring (parent.length() + 1)).upToFirstOccurrenceOf ("/", false, false);
+            if (first.isNotEmpty()) out.addIfNotAlreadyThere (first);
+        }
+        auto rank = [] (const juce::String& n) { return n == "Factory" ? 0 : (n == "User" ? 1 : 2); };
+        std::vector<juce::String> v (out.begin(), out.end());
+        std::sort (v.begin(), v.end(), [&] (const juce::String& a, const juce::String& b) { if (parent.isEmpty() && rank (a) != rank (b)) return rank (a) < rank (b); return a.compareNatural (b) < 0; });
+        return juce::StringArray (v.data(), (int) v.size());
+    }
+    int countIn (const juce::String& node) const { int n = 0; for (auto& e : all) if (inside (e.bank, node)) ++n; return n; }
+    bool hasDirect (const juce::String& node) const { for (auto& e : all) if (e.bank == node) return true; return false; }
+    void addRows (const juce::String& parent, int depth)
+    {
+        for (auto& name : childNames (parent))
+        {
+            auto path = parent.isEmpty() ? name : parent + "/" + name; auto label = name;
+            for (;;)      // a folder with nothing of its own and a single subfolder is shown as that subfolder ("Imported/Orbital" shows as "Orbital")
+            {
+                const auto kids = childNames (path);
+                if (kids.size() != 1 || hasDirect (path)) break;
+                label = kids[0]; path << "/" << kids[0];
+            }
+            Node n; n.path = path; n.label = label; n.depth = depth; n.count = countIn (path); n.hasKids = childNames (path).size() > 0;
+            rows.push_back (n);
+            if (n.hasKids && expanded.contains (path)) addRows (path, depth + 1);
+        }
+    }
+    void rebuildRows()
+    {
+        rows.clear(); addRows ({}, 0);
+        juce::StringArray items; items.add ("All  (" + juce::String ((int) all.size()) + ")"); int sel = selNode.isEmpty() ? 0 : -1;
+        for (size_t i = 0; i < rows.size(); ++i)
+        {
+            const auto& n = rows[i]; if (n.path == selNode) sel = (int) i + 1;
+            const auto cnt = "  (" + juce::String (n.count) + ")"; const auto lead = juce::String::repeatedString ("  ", n.depth) + (n.hasKids ? (expanded.contains (n.path) ? "- " : "+ ") : "  ");
+            const int room = juce::jmax (8, 21 - lead.length() - cnt.length()); auto lab = n.label;
+            if (lab.length() > room) lab = lab.substring (0, room - 2).trimEnd() + "..";      // long names are cut, not shrunk
+            items.add (lead + lab + cnt);
+        }
+        banks.setItems (items, sel);
+    }
     void fillPresets()
     {
         shown.clear(); juce::StringArray names; int sel = -1;
@@ -825,7 +889,7 @@ private:
         for (auto& e : all)
         {
             const auto cat = presetCategories().contains (e.category) ? e.category : juce::String ("Other");
-            if (selBank != 0 && e.bank != bankNames[selBank - 1]) continue;
+            if (selNode.isNotEmpty() && ! inside (e.bank, selNode)) continue;
             if (wanted.isNotEmpty() && cat != wanted) continue;
             if (selPart == 1 && e.part.isNotEmpty()) continue;
             if (selPart > 1 && e.part != presetPartNames()[selPart - 1]) continue;
@@ -833,11 +897,12 @@ private:
             if (e.part.isEmpty() && e.name == proc.getPresetName() && e.bank == proc.getPresetBank()) sel = (int) shown.size();
             shown.push_back (e); names.add (e.part.isNotEmpty() ? e.name + "   [" + e.part + "]" : e.name);
         }
+        currentHidden = sel < 0 && std::any_of (all.begin(), all.end(), [this] (const PresetEntry& e) { return e.part.isEmpty() && e.name == proc.getPresetName() && e.bank == proc.getPresetBank(); });
         presets.setItems (names, sel); repaint();
     }
     RelicProcessor& proc; TextList banks, presets; std::unique_ptr<StoneButton> btn[5]; int selPart = 0;      // selPart: 0 all types, 1 full presets, 2.. one part
     juce::TextEditor search; std::unique_ptr<StoneButton> chips[9]; int selCat = 0;
-    std::vector<PresetEntry> all, shown; juce::StringArray bankNames; int selBank = 0;
+    std::vector<PresetEntry> all, shown; juce::StringArray bankNames, expanded; std::vector<Node> rows; juce::String selNode; bool currentHidden = false;
 };
 
 // Label on top, then  <  value  >  for a choice or integer parameter.
