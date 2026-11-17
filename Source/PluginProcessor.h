@@ -6,6 +6,7 @@
 #include "Dsp/Effects.h"
 #include "Dsp/Effects2.h"
 #include "Dsp/Mod.h"
+#include "Dsp/Automation.h"
 #include "NoteEngine.h"
 
 // A loaded sample: stereo float data plus a coarse peak overview for drawing.
@@ -188,6 +189,12 @@ private:
     std::array<std::atomic<float>*, 64> evMask {}, evLen {}, evVel {};      // Events mode, one per step
     std::array<std::atomic<float>*, 15> chopPts {};
     std::array<std::array<std::atomic<float>*, 32>, 2> lfoPts {};      // the drawn LFO cycles (rf::kLfoPts points each)
+    // Automation lanes (see Dsp/Automation.h): cached parameters, this block's settings and the per-target modulation buffers
+    struct AutoPtrs { std::atomic<float> *on, *src, *depth, *dst, *div, *feel, *hz, *phase, *trig, *envA, *envD; std::array<std::atomic<float>*, rf::kAutoPts> pts; };
+    std::array<AutoPtrs, rf::kAutoLanes> autoP {};
+    std::atomic<float> *modHeatP = nullptr, *llOn = nullptr, *llShape = nullptr, *llRate = nullptr, *llSync = nullptr, *llDepth = nullptr; std::array<std::atomic<float>*, 11> llBit {}, llAmt {};
+    rf::AutoBank autoBank; rf::AutoLaneCfg autoCfg[rf::kAutoLanes]; rf::LegacyCfg legCfg; float autoPts[rf::kAutoLanes][rf::kAutoPts] {}; float heatNow = 1.0f; const float* blockL = nullptr;
+    void readAuto();
     std::array<std::atomic<float>*, 16> kitSlice {}, kitPitch {}, kitRev {}, kitLevel {}, kitChoke {};
     std::atomic<float>* p (const char* id) const { return apvts.getRawParameterValue (id); }
 

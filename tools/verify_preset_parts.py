@@ -12,7 +12,7 @@ def values(raw):
     xml, comp, size = unwrap(bytes(raw)); inner = comp[8:8 + size].decode().rstrip('\0'); return {k: float(v) for k, v in re.findall(r'<PARAM id="([^"]+)" value="([^"]+)"', inner)}
 # the expected parts, written independently of the plugin's own rule
 EFFECTS = ('trem_', 'delay_', 'comp_', 'crush_', 'pan_', 'chorus_', 'flanger_', 'reverb_', 'eq_', 'tape_', 'widener_', 'wah_', 'lofi_', 'ott_', 'pdelay_', 'talk_', 'sgate_')
-MOD = ('lfo1_', 'lfo2_', 'menv1_', 'menv2_', 'macro_', 'xy_') + tuple(f'mod{i}_' for i in range(1, 9))
+MOD = ('lfo1_', 'lfo2_', 'menv1_', 'menv2_', 'macro_', 'xy_', 'auto', 'llfo_', 'mod_heat') + tuple(f'mod{i}_' for i in range(1, 9))
 SAMPLE = ('sample_', 'sampleb_', 'loop_', 'tex_', 'chop_', 'split_')
 NOTES = ('arp_', 'chord_', 'voice_lead')
 def part_of(i):
@@ -23,7 +23,7 @@ def part_of(i):
     return 'Synth'
 PARTS = ['Synth', 'Sample', 'Modulation', 'Effects', 'Arp & Chords']
 fresh = load_plugin(PATH); DEF = values(fresh.raw_state); IDS = sorted(DEF)
-check('every control is assigned to a part (830 controls, five parts, none left over)', len(IDS) == 830 and {part_of(i) for i in IDS} == set(PARTS), f'({ {p: sum(part_of(i) == p for i in IDS) for p in PARTS} })')
+check('every control is assigned to a part (1210 controls, five parts, none left over)', len(IDS) == 1210 and {part_of(i) for i in IDS} == set(PARTS), f'({ {p: sum(part_of(i) == p for i in IDS) for p in PARTS} })')
 # a different value for every control: taken from the factory presets, or set by hand where no preset moves it
 seen = {}
 for f in glob.glob(str(ROOT / 'Assets/presets/*.xml')):

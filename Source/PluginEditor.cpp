@@ -356,6 +356,8 @@ RelicEditor::RelicEditor (RelicProcessor& p)
     for (auto id : { "eq_on", "tape_on", "widener_on", "wah_on", "lofi_on", "ott_on" }) fx3Group.push_back (addNoteToggle (id, "ON", 0.45f));
     tapeShapeBtn = std::make_unique<ui::StoneButton> ("SHAPE...", true, false); tapeShapeBtn->textScale = 0.4f; tapeShapeBtn->setTooltip (help::forId ("tape_type")); addAndMakeVisible (*tapeShapeBtn); fx3Group.push_back (tapeShapeBtn.get());
     tapeShapeBtn->onClick = [this] { juce::CallOutBox::launchAsynchronously (std::make_unique<ui::DistortionPanel> (proc), tapeShapeBtn->getScreenBounds(), nullptr); };
+    autoBtn = std::make_unique<ui::StoneButton> ("LANES...", true, false); autoBtn->textScale = 0.4f; autoBtn->setTooltip (help::forId ("auto1_on")); addAndMakeVisible (*autoBtn); modGroup.push_back (autoBtn.get());
+    autoBtn->onClick = [this] { juce::CallOutBox::launchAsynchronously (std::make_unique<ui::AutomationPanel> (proc), autoBtn->getScreenBounds(), nullptr); };
     wahMode = std::make_unique<ui::StoneButton> ("LFO", true, false); wahMode->textScale = 0.4f; wahMode->onClick = [this] { cycleChoice ("wah_mode", +1); };
     addAndMakeVisible (*wahMode); fx3Group.push_back (wahMode.get());
     addNoteToggle ("eq_on", "EQ", 0.42f, "eq_on#main"); addNoteToggle ("tape_on", "TAPE", 0.38f, "tape_on#main"); addNoteToggle ("lead_on", "LEAD", 0.38f, "lead_on");
@@ -962,7 +964,7 @@ void RelicEditor::resized()
         K ((t + "_rate_hz").toRawUTF8())->setBounds (R (x0 + 10, 264, 92, 84));
         noteToggles[t + "_keysync"]->setBounds (R (x0 + 150, 286, 150, 40)); lfoDrawBtn[(size_t) n - 1]->setBounds (R (x0 + 150, 328, 150, 24));
     }
-    modPageBtn[0]->setBounds (R (558, 356, 130, 32)); modPageBtn[1]->setBounds (R (696, 356, 130, 32));
+    modPageBtn[0]->setBounds (R (558, 356, 130, 32)); modPageBtn[1]->setBounds (R (696, 356, 130, 32)); autoBtn->setBounds (R (834, 356, 130, 32));
     for (int n = 1; n <= 8; ++n)
     {
         const juce::String t = "mod" + juce::String (n); const float y = 394 + ((n - 1) % 4) * 60.0f;

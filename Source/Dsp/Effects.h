@@ -400,7 +400,7 @@ struct Widener
 struct Wah
 {
     void prepare (double) { phase = 0.0; env = 0.0f; sv[0].reset(); sv[1].reset(); count = 0; pos = 0.5f; }
-    inline void process (float& l, float& r, int mode, float rateHz, float depth, float reso, float mix, double sr)
+    inline void process (float& l, float& r, int mode, float rateHz, float depth, float reso, float mix, double sr, float posOff = 0.0f)
     {
         phase += rateHz / sr; phase -= std::floor (phase);
         const float lvl = std::abs (0.5f * (l + r)), ca = std::exp (-1.0f / (0.003f * (float) sr)), cr = std::exp (-1.0f / (0.1f * (float) sr));
@@ -408,6 +408,7 @@ struct Wah
         if ((count++ & 3) == 0)
         {
             pos = mode == 0 ? 0.5f + 0.5f * depth * (float) std::sin (2 * kPi * phase) : std::min (1.0f, env * depth * 6.0f);
+            if (posOff != 0.0f) pos = std::min (1.0f, std::max (0.0f, pos + posOff));        // the Wah Frequency automation target: shifts the sweep
             const float f = 300.0f * std::pow (2.0f, 3.0f * pos), q = 1.5f + reso * 8.0f;
             sv[0].setup (f, q, sr); sv[1].setup (f, q, sr);
         }

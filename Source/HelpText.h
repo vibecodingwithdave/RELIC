@@ -15,6 +15,9 @@ inline juce::String familyKey (juce::String id)
     if (id.startsWith ("lfo2_")) return "lfo1_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("menv2_")) return "menv1_" + id.fromFirstOccurrenceOf ("_", false, false);
     if (id.startsWith ("chord_deg_")) return "chord_deg_1_shape";
+    if (id.startsWith ("auto") && id.length() > 6 && id[4] >= '1' && id[4] <= '8' && id[5] == '_') { const auto rest = id.substring (6); return rest.startsWith ("w") ? juce::String ("auto1_w1") : "auto1_" + rest; }
+    if (id.startsWith ("llfo_t")) return "llfo_t1";
+    if (id.startsWith ("llfo_a")) return "llfo_a1";
     if (id.startsWith ("arp_pat_") && id != "arp_pat_length") return "arp_pat_1";
     if (id.startsWith ("arp_ev_") && id != "arp_ev_length") return "arp_ev_1_" + id.fromLastOccurrenceOf ("_", false, false);
     if (id.length() > 5 && id.startsWith ("mod") && id[3] >= '2' && id[3] <= '8' && id[4] == '_') return "mod1_" + id.substring (5);
@@ -24,6 +27,23 @@ inline juce::String familyKey (juce::String id)
 inline const Table& params()
 {
     static const Table t = {
+        // automation lanes
+        { "mod_heat", "Modulation intensity: scales every automation lane at once (0 = none, 1 = full). The fan-out LFO is not affected." },
+        { "auto1_on", "Switch this automation lane on. Each lane is its own generator with its own shape, speed, depth and one target." },
+        { "auto1_src", "What the lane plays: a drawn cycle, a sine, triangle, saw or square, sample and hold, or an attack-decay envelope." },
+        { "auto1_dst", "What the lane moves. Lane depth targets let one lane scale another lane's depth." },
+        { "auto1_depth", "How far the lane moves its target. How a given depth maps onto each target differs (see the manual); pitch, pan and the gain targets are calibrated." },
+        { "auto1_div", "How long one cycle lasts, as a note value at the host tempo: 1 bar, 1/2, 1/4, 1/8, 1/16, 2 bars or 4 bars; Free uses the rate below." },
+        { "auto1_feel", "Straight, dotted (1.5 times as long) or triplet (two thirds as long) note values." },
+        { "auto1_hz", "The lane's speed in Hz when its division is Free." },
+        { "auto1_phase", "Where in its cycle the lane starts. Its exact meaning in imported sounds is not verified." },
+        { "auto1_trig", "Restart the lane (and fire its envelope) at every note." },
+        { "auto1_env_a_ms", "Envelope lane: attack time in ms." }, { "auto1_env_d_ms", "Envelope lane: decay time in ms." },
+        { "auto1_joy", "Kept from imported sounds; has no effect yet." },
+        { "auto1_w1", "Draw the lane's cycle by hand (32 points, smooth and wrapping). Used when the Generator is Draw." },
+        { "llfo_on", "Fan-out LFO: one global generator that can drive up to eleven targets at once, each with its own amount." },
+        { "llfo_shape", "Fan-out LFO shape." }, { "llfo_rate_hz", "Fan-out LFO speed in Hz (when Sync is Free)." }, { "llfo_sync", "Lock the fan-out LFO to the host tempo." },
+        { "llfo_depth", "Fan-out LFO overall depth." }, { "llfo_t1", "Send the fan-out LFO to this target." }, { "llfo_a1", "How much of the fan-out LFO this target gets." },
         // oscillator, envelope, master
         { "wt_use_file", "Wavetable oscillators play the loaded wavetable file instead of the built-in bank. Width sweeps through the file's frames. Off: the built-in bank." },
         { "waveform", "The main oscillator's waveform. The arrows on either side step through them." },

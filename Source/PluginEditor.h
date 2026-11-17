@@ -1170,7 +1170,7 @@ private:
 class LfoGraph : public juce::Component
 {
 public:
-    LfoGraph (RelicProcessor& p, int lfoNo) : proc (p), lfo (lfoNo) { setMouseCursor (juce::MouseCursor::CrosshairCursor); }
+    LfoGraph (RelicProcessor& p, int lfoNo, const juce::String& laneId = {}) : proc (p), lfo (lfoNo), pre (laneId.isEmpty() ? "lfo" + juce::String (lfoNo) : laneId), shapeId (laneId.isEmpty() ? pre + "_shape" : laneId + "_src"), customIdx (laneId.isEmpty() ? (int) rf::ModLfo::Custom : (int) rf::AsDraw) { setMouseCursor (juce::MouseCursor::CrosshairCursor); }
     void paint (juce::Graphics& g) override
     {
         const auto b = area(); g.setColour (juce::Colour (0xff0b090e)); g.fillRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
@@ -1178,7 +1178,7 @@ public:
         for (int i = 0; i <= 4; ++i) { g.drawHorizontalLine ((int) (b.getY() + b.getHeight() * i / 4.0f), b.getX(), b.getRight()); g.drawVerticalLine ((int) (b.getX() + b.getWidth() * i / 4.0f), b.getY(), b.getBottom()); }
         g.setColour (juce::Colour (0xffe8e0b0).withAlpha (0.4f)); g.drawHorizontalLine ((int) (b.getY() + b.getHeight() * 0.5f), b.getX(), b.getRight());
         float w[rf::kLfoPts]; for (int k = 0; k < rf::kLfoPts; ++k) w[k] = get (k);
-        const bool on = (int) proc.apvts.getRawParameterValue ("lfo" + juce::String (lfo) + "_shape")->load() == rf::ModLfo::Custom;
+        const bool on = (int) proc.apvts.getRawParameterValue (shapeId)->load() == customIdx;
         juce::Path path; for (int i = 0; i <= 240; ++i) { const double ph = i / 240.0; const float y = (rf::lfoCustomEval (w, ph) + 1.0f) * 0.5f; const float px = b.getX() + (float) ph * b.getWidth(), py = b.getBottom() - y * b.getHeight(); if (i == 0) path.startNewSubPath (px, py); else path.lineTo (px, py); }
         g.setColour (on ? juce::Colour (0xff9be15d) : juce::Colour (0xff9be15d).withAlpha (0.4f)); g.strokePath (path, juce::PathStrokeType (2.2f));
         for (int k = 0; k < rf::kLfoPts; ++k) { g.setColour (juce::Colour (0xffe8e0b0)); g.fillEllipse (b.getX() + b.getWidth() * (float) k / (float) rf::kLfoPts - 2.5f, b.getBottom() - w[k] * b.getHeight() - 2.5f, 5.0f, 5.0f); }
@@ -1188,9 +1188,9 @@ public:
     void mouseUp (const juce::MouseEvent&) override { if (touched) for (int k = 0; k < rf::kLfoPts; ++k) par (k)->endChangeGesture(); touched = false; lastCol = -1; }
     void setAll (const float* v) { for (int k = 0; k < rf::kLfoPts; ++k) { auto* q = par (k); q->beginChangeGesture(); q->setValueNotifyingHost (v[k]); q->endChangeGesture(); } useCustom(); repaint(); }
 private:
-    juce::RangedAudioParameter* par (int k) const { return proc.apvts.getParameter ("lfo" + juce::String (lfo) + "_w" + juce::String (k + 1)); }
-    float get (int k) const { return proc.apvts.getRawParameterValue ("lfo" + juce::String (lfo) + "_w" + juce::String (k + 1))->load(); }
-    void useCustom() { if (auto* m = proc.apvts.getParameter ("lfo" + juce::String (lfo) + "_shape")) m->setValueNotifyingHost (m->convertTo0to1 ((float) rf::ModLfo::Custom)); }       // drawing switches the LFO to Custom
+    juce::RangedAudioParameter* par (int k) const { return proc.apvts.getParameter (pre + "_w" + juce::String (k + 1)); }
+    float get (int k) const { return proc.apvts.getRawParameterValue (pre + "_w" + juce::String (k + 1))->load(); }
+    void useCustom() { if (auto* m = proc.apvts.getParameter (shapeId)) m->setValueNotifyingHost (m->convertTo0to1 ((float) customIdx)); }       // drawing switches the LFO to Custom
     juce::Rectangle<float> area() const { return getLocalBounds().toFloat().reduced (14.0f, 12.0f); }
     void paintAt (const juce::MouseEvent& e)
     {
@@ -1200,7 +1200,7 @@ private:
         if (lastCol >= 0 && std::abs (k - lastCol) > 1) for (int j = std::min (k, lastCol) + 1; j < std::max (k, lastCol); ++j) par (j)->setValueNotifyingHost (lastY + (y - lastY) * (float) (j - lastCol) / (float) (k - lastCol));
         lastCol = k; lastY = y; useCustom(); repaint();
     }
-    RelicProcessor& proc; int lfo; bool touched = false; int lastCol = -1; float lastY = 0.0f;
+    RelicProcessor& proc; int lfo; juce::String pre, shapeId; int customIdx; bool touched = false; int lastCol = -1; float lastY = 0.0f;
 };
 
 class LfoPanel : public juce::Component, private juce::Timer
@@ -1233,6 +1233,106 @@ public:
 private:
     void timerCallback() override { graph.repaint(); }
     LfoGraph graph; juce::Label title, hint; std::array<juce::TextButton, 6> btn;
+};
+
+// The automation lanes and the fan-out LFO: pick a lane, edit its generator, target, timing and drawn cycle; below, the global intensity and the fan-out LFO with its eleven targets.
+class AutomationPanel : public juce::Component, private juce::Timer
+{
+public:
+    AutomationPanel (RelicProcessor& p) : proc (p)
+    {
+        auto label = [&] (juce::Label& l, const char* t) { l.setText (t, juce::dontSendNotification); l.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0)); l.setFont (juce::FontOptions (12.0f)); addAndMakeVisible (l); };
+        for (int k = 0; k < rf::kAutoLanes; ++k)
+        {
+            auto& b = laneBtn[(size_t) k]; b.setButtonText (juce::String (k + 1)); b.setClickingTogglesState (true); b.setRadioGroupId (771); addAndMakeVisible (b);
+            b.onClick = [this, k] { bindLane (k + 1); };
+        }
+        for (auto* c : { &generator, &target, &division, &feel }) addAndMakeVisible (*c);
+        { auto* par = dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter ("auto1_src")); generator.addItemList (par->choices, 1); }
+        { auto* par = dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter ("auto1_dst")); target.addItemList (par->choices, 1); }
+        { auto* par = dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter ("auto1_div")); division.addItemList (par->choices, 1); }
+        { auto* par = dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter ("auto1_feel")); feel.addItemList (par->choices, 1); }
+        laneOn.setButtonText ("ON"); trig.setButtonText ("RETRIGGER ON NOTE"); addAndMakeVisible (laneOn); addAndMakeVisible (trig);
+        static const char* sl[6] = { "DEPTH", "FREE HZ", "PHASE", "ENV ATTACK", "ENV DECAY", "JOY LINK*" };
+        for (int i = 0; i < 6; ++i) { label (sLab[(size_t) i], sl[i]); auto& s = laneS[(size_t) i]; s.setSliderStyle (juce::Slider::LinearHorizontal); s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 18); addAndMakeVisible (s); }
+        label (gLab, "GENERATOR"); label (tLab, "TARGET"); label (dLab, "DIVISION"); label (fLab, "FEEL");
+        label (heatLab, "INTENSITY"); heat.setSliderStyle (juce::Slider::LinearHorizontal); heat.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 18); addAndMakeVisible (heat);
+        heatA = std::make_unique<juce::SliderParameterAttachment> (*p.apvts.getParameter ("mod_heat"), heat); heat.setTooltip (help::forId ("mod_heat"));
+        label (fanLab, "FAN-OUT LFO  (one generator, up to eleven targets)");
+        llOnT.setButtonText ("ON"); addAndMakeVisible (llOnT); llOnA = std::make_unique<juce::ButtonParameterAttachment> (*p.apvts.getParameter ("llfo_on"), llOnT);
+        for (auto* c : { &llShape, &llSync }) addAndMakeVisible (*c);
+        { auto* par = dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter ("llfo_shape")); llShape.addItemList (par->choices, 1); llShapeA = std::make_unique<juce::ComboBoxParameterAttachment> (*par, llShape); }
+        { auto* par = dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter ("llfo_sync")); llSync.addItemList (par->choices, 1); llSyncA = std::make_unique<juce::ComboBoxParameterAttachment> (*par, llSync); }
+        for (int i = 0; i < 2; ++i) { auto& s = llS[(size_t) i]; s.setSliderStyle (juce::Slider::LinearHorizontal); s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 18); addAndMakeVisible (s); }
+        llSA[0] = std::make_unique<juce::SliderParameterAttachment> (*p.apvts.getParameter ("llfo_rate_hz"), llS[0]); llSA[1] = std::make_unique<juce::SliderParameterAttachment> (*p.apvts.getParameter ("llfo_depth"), llS[1]);
+        label (llLab[0], "RATE"); label (llLab[1], "DEPTH");
+        static const char* tn[11] = { "CUTOFF", "RESONANCE", "DELAY MIX", "REVERB MIX", "CHORUS MIX", "FLANGER MIX", "WAH FREQ", "CRUSH MIX", "STEREO WIDTH", "TREMOLO DEPTH", "OSC/SAMPLE MIX" };
+        for (int b = 0; b < 11; ++b)
+        {
+            const auto n = juce::String (b + 1); auto& t = llT[(size_t) b]; t.setButtonText (tn[b]); addAndMakeVisible (t); llTA[(size_t) b] = std::make_unique<juce::ButtonParameterAttachment> (*p.apvts.getParameter ("llfo_t" + n), t);
+            auto& s = llA[(size_t) b]; s.setSliderStyle (juce::Slider::LinearHorizontal); s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0); addAndMakeVisible (s); llAA[(size_t) b] = std::make_unique<juce::SliderParameterAttachment> (*p.apvts.getParameter ("llfo_a" + n), s);
+            t.setTooltip (help::forId ("llfo_t1")); s.setTooltip (help::forId ("llfo_a1"));
+        }
+        note.setText ("* stored from imports, no effect yet.  Pitch, pan, master and synth volume depths are calibrated; other targets are estimates.", juce::dontSendNotification); note.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0).withAlpha (0.55f)); note.setFont (juce::FontOptions (10.5f)); addAndMakeVisible (note);
+        laneBtn[0].setToggleState (true, juce::dontSendNotification); bindLane (1);
+        setSize (760, 540); startTimerHz (10);
+    }
+    void paint (juce::Graphics& g) override { g.fillAll (juce::Colour (0xff17131c)); g.setColour (juce::Colour (0xffe8e0b0).withAlpha (0.2f)); g.drawHorizontalLine (322, 12.0f, (float) getWidth() - 12.0f); }
+    void resized() override
+    {
+        for (int k = 0; k < rf::kAutoLanes; ++k) laneBtn[(size_t) k].setBounds (12 + k * 44, 10, 40, 26);
+        heatLab.setBounds (380, 10, 80, 26); heat.setBounds (460, 10, 288, 26);
+        laneOn.setBounds (12, 46, 60, 24); gLab.setBounds (84, 46, 78, 24); generator.setBounds (162, 46, 130, 24); tLab.setBounds (304, 46, 56, 24); target.setBounds (362, 46, 150, 24);
+        dLab.setBounds (12, 80, 70, 24); division.setBounds (84, 80, 90, 24); fLab.setBounds (186, 80, 40, 24); feel.setBounds (228, 80, 96, 24); trig.setBounds (338, 80, 170, 24);
+        for (int i = 0; i < 6; ++i) { sLab[(size_t) i].setBounds (12, 114 + i * 28, 84, 24); laneS[(size_t) i].setBounds (98, 114 + i * 28, 250, 24); }
+        if (graph) graph->setBounds (360, 112, 388, 170);
+        for (int i = 0; i < 6; ++i) shapeBtn[(size_t) i].setBounds (360 + i * 65, 288, 62, 24);
+        fanLab.setBounds (12, 330, 500, 22); llOnT.setBounds (12, 356, 60, 24); llShape.setBounds (80, 356, 100, 24); llLab[0].setBounds (192, 356, 36, 24); llS[0].setBounds (230, 356, 190, 24); llSync.setBounds (432, 356, 90, 24);
+        llLab[1].setBounds (534, 356, 44, 24); llS[1].setBounds (580, 356, 170, 24);
+        for (int b = 0; b < 11; ++b) { const int col = b % 2, row = b / 2; llT[(size_t) b].setBounds (12 + col * 372, 394 + row * 22, 150, 20); llA[(size_t) b].setBounds (166 + col * 372, 394 + row * 22, 200, 20); }
+        note.setBounds (12, 514, getWidth() - 24, 18);
+    }
+private:
+    void timerCallback() override { if (graph) graph->repaint(); }
+    void bindLane (int n)
+    {
+        lane = n; const auto t = "auto" + juce::String (n); auto& a = proc.apvts;
+        laneOnA.reset(); trigA.reset(); genA.reset(); tgtA.reset(); divA.reset(); feelA.reset(); for (auto& x : laneSA) x.reset();
+        laneOnA = std::make_unique<juce::ButtonParameterAttachment> (*a.getParameter (t + "_on"), laneOn); trigA = std::make_unique<juce::ButtonParameterAttachment> (*a.getParameter (t + "_trig"), trig);
+        genA = std::make_unique<juce::ComboBoxParameterAttachment> (*dynamic_cast<juce::RangedAudioParameter*> (a.getParameter (t + "_src")), generator);
+        tgtA = std::make_unique<juce::ComboBoxParameterAttachment> (*a.getParameter (t + "_dst"), target); divA = std::make_unique<juce::ComboBoxParameterAttachment> (*a.getParameter (t + "_div"), division);
+        feelA = std::make_unique<juce::ComboBoxParameterAttachment> (*a.getParameter (t + "_feel"), feel);
+        static const char* ids[6] = { "_depth", "_hz", "_phase", "_env_a_ms", "_env_d_ms", "_joy" };
+        for (int i = 0; i < 6; ++i) { laneSA[(size_t) i] = std::make_unique<juce::SliderParameterAttachment> (*a.getParameter (t + ids[i]), laneS[(size_t) i]); laneS[(size_t) i].setTooltip (help::forId (t + ids[i])); }
+        laneOn.setTooltip (help::forId (t + "_on")); trig.setTooltip (help::forId (t + "_trig")); generator.setTooltip (help::forId (t + "_src")); target.setTooltip (help::forId (t + "_dst"));
+        division.setTooltip (help::forId (t + "_div")); feel.setTooltip (help::forId (t + "_feel"));
+        graph = std::make_unique<LfoGraph> (proc, n, t); addAndMakeVisible (*graph);
+        static const char* names[6] = { "SINE", "TRI", "SAW UP", "SAW DOWN", "SQUARE", "S.RANDOM" };
+        for (int i = 0; i < 6; ++i)
+        {
+            auto& b = shapeBtn[(size_t) i]; b.setButtonText (names[i]); addAndMakeVisible (b);
+            b.onClick = [this, i]
+            {
+                float v[rf::kAutoPts]; uint32_t r = (uint32_t) juce::Time::getMillisecondCounter() * 2654435761u + 12345u;
+                for (int k = 0; k < rf::kAutoPts; ++k)
+                {
+                    const float x = (float) k / (float) rf::kAutoPts; r = r * 1664525u + 1013904223u;
+                    switch (i) { case 0: v[k] = 0.5f + 0.5f * std::sin (2.0f * juce::MathConstants<float>::pi * x); break; case 1: v[k] = 1.0f - std::abs (2.0f * x - 1.0f); break; case 2: v[k] = x; break;
+                                 case 3: v[k] = 1.0f - x; break; case 4: v[k] = x < 0.5f ? 1.0f : 0.0f; break; default: v[k] = (float) (r >> 9) / 8388608.0f; }
+                }
+                if (graph) graph->setAll (v);
+            };
+        }
+        resized(); repaint();
+    }
+    RelicProcessor& proc; int lane = 1;
+    std::array<juce::TextButton, rf::kAutoLanes> laneBtn; std::array<juce::TextButton, 6> shapeBtn;
+    juce::ComboBox generator, target, division, feel; juce::ToggleButton laneOn, trig; std::array<juce::Slider, 6> laneS; std::array<juce::Label, 6> sLab; juce::Label gLab, tLab, dLab, fLab, heatLab, fanLab, note;
+    std::unique_ptr<juce::ButtonParameterAttachment> laneOnA, trigA; std::unique_ptr<juce::ComboBoxParameterAttachment> genA, tgtA, divA, feelA; std::array<std::unique_ptr<juce::SliderParameterAttachment>, 6> laneSA;
+    std::unique_ptr<LfoGraph> graph; juce::Slider heat; std::unique_ptr<juce::SliderParameterAttachment> heatA;
+    juce::ToggleButton llOnT; std::unique_ptr<juce::ButtonParameterAttachment> llOnA; juce::ComboBox llShape, llSync; std::unique_ptr<juce::ComboBoxParameterAttachment> llShapeA, llSyncA;
+    std::array<juce::Slider, 2> llS; std::array<std::unique_ptr<juce::SliderParameterAttachment>, 2> llSA; std::array<juce::Label, 2> llLab;
+    std::array<juce::ToggleButton, 11> llT; std::array<juce::Slider, 11> llA; std::array<std::unique_ptr<juce::ButtonParameterAttachment>, 11> llTA; std::array<std::unique_ptr<juce::SliderParameterAttachment>, 11> llAA;
 };
 
 // Bars for one pass of the arpeggio on a demo triad; the bar for the step that just played lights up.
@@ -1650,7 +1750,7 @@ private:
     struct Pad { std::unique_ptr<ui::StoneButton> btn; std::unique_ptr<juce::ButtonParameterAttachment> att; const char* id; };
     std::vector<Pad> pads;
     std::unique_ptr<ui::StoneButton> waveLeft, waveRight, waveName, polyBtn, allOn, bypassFx;
-    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn, vibEnvBtn, wtOscBtn, tapeShapeBtn; std::array<std::unique_ptr<ui::StoneButton>, 2> lfoDrawBtn; int wtOsc = 0;      // wavetable file strip on the OSC tab
+    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn, vibEnvBtn, wtOscBtn, tapeShapeBtn, autoBtn; std::array<std::unique_ptr<ui::StoneButton>, 2> lfoDrawBtn; int wtOsc = 0;      // wavetable file strip on the OSC tab
     struct SyncChip { std::unique_ptr<ui::StoneButton> btn; juce::String knobId, syncId; };
     std::vector<SyncChip> syncChips; void updateSyncChips();        // a small note-value button on each rate / time knob that can follow the host tempo
     void updateWtStrip(); void showWavetableMenu(); void loadWavetableDialog(); void afterWavetableLoaded();
