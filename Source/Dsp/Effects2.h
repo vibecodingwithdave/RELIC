@@ -144,4 +144,20 @@ private:
     float win[N], cs[N / 2], sn[N / 2]; int rev[N]; Ch ch[2];
 };
 
+// Rhythmic gate: the level follows a repeating shape (a chopping pattern) at a set rate. Depth is how far it closes, Smooth how softly it moves between open and closed.
+struct RhythmGate
+{
+    void prepare (double) { phase = 0.0; g = 1.0f; lastSmooth = -1.0f; coef = 0.0f; }
+    inline void process (float& l, float& r, float rateHz, float depth, int shape, float smooth, double sr)
+    {
+        phase += rateHz / sr; phase -= std::floor (phase);
+        const float w = shape == 1 ? 0.5f + 0.5f * (float) std::cos (2.0 * kPi * phase) : (shape == 2 ? 1.0f - (float) phase : (phase < 0.5 ? 1.0f : 0.0f));     // 1 = open: square, sine, falling saw
+        const float target = 1.0f - depth * (1.0f - w);
+        if (smooth != lastSmooth) { lastSmooth = smooth; coef = smooth <= 0.0f ? 0.0f : std::exp (-1.0f / ((float) sr * (0.0002f + 0.04f * smooth * smooth))); }
+        g = target + coef * (g - target);
+        l *= g; r *= g;
+    }
+    double phase = 0.0; float g = 1.0f, lastSmooth = -1.0f, coef = 0.0f;
+};
+
 } // namespace rf

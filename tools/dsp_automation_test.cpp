@@ -1,5 +1,6 @@
 // Header-only checks of the automation lanes (no JUCE): timing, shapes, drawn cycle sign, envelope, depth modulation, fan-out, determinism.
 #include "../Source/Dsp/Automation.h"
+#include "../Source/Dsp/Effects2.h"
 #include <cstdio>
 #include <cstring>
 
@@ -106,6 +107,20 @@ int main()
         auto run = [&] (int blk) { rf::AutoBank b; b.prepare(); rf::AutoLaneCfg cfg[8]; rf::LegacyCfg lg; cfg[0].on = true; cfg[0].shape = rf::AsSampleHold; cfg[0].div = 7; cfg[0].hz = 3.0f; cfg[0].dst = rf::AtPitch; cfg[0].depth = 1.0f;
                   std::vector<float> o; for (int done = 0; done < 20000; done += blk) { const int n = std::min (blk, 20000 - done); b.fill (cfg, lg, 1.0f, 120.0, 44100.0, 0, n); for (int i = 0; i < n; ++i) o.push_back (b.at (rf::AtPitch, i)); } return o; };
         check ("output does not depend on block size", run (64) == run (4096));
+    }
+    // Rhythmic gate
+    {
+        auto run = [&] (int shape, float depth, float smooth, float rate) { rf::RhythmGate g; g.prepare (44100.0); std::vector<float> o; for (int i = 0; i < 44100; ++i) { float l = 1.0f, r = 1.0f; g.process (l, r, rate, depth, shape, smooth, 44100.0); o.push_back (l); } return o; };
+        auto sq = run (0, 1.0f, 0.0f, 4.0f); float mn = 9, mx = -9; for (float v : sq) { mn = std::min (mn, v); mx = std::max (mx, v); }
+        check ("gate: square at depth 1 shuts completely and opens fully", mn == 0.0f && mx == 1.0f);
+        int shut = 0; for (float v : sq) if (v == 0.0f) ++shut; check ("gate: square is shut half the time", std::abs (shut / 44100.0 - 0.5) < 0.01);
+        auto half = run (0, 0.5f, 0.0f, 4.0f); mn = 9; for (float v : half) mn = std::min (mn, v); check ("gate: depth .5 closes to half level", std::abs (mn - 0.5f) < 1e-6f);
+        auto none = run (0, 0.0f, 0.0f, 4.0f); bool one = true; for (float v : none) if (v != 1.0f) one = false; check ("gate: depth 0 is transparent", one);
+        auto soft = run (0, 1.0f, 1.0f, 4.0f), hard = run (0, 1.0f, 0.0f, 4.0f); float ms = 0, mh = 0; for (size_t i = 1; i < soft.size(); ++i) { ms = std::max (ms, std::abs (soft[i] - soft[i - 1])); mh = std::max (mh, std::abs (hard[i] - hard[i - 1])); }
+        check ("gate: Smooth softens the edges (largest step much smaller)", ms < 0.1f * mh, "");
+        auto sn = run (1, 1.0f, 0.0f, 4.0f); mn = 9; mx = -9; for (float v : sn) { mn = std::min (mn, v); mx = std::max (mx, v); } check ("gate: sine shape swells smoothly between shut and open", mn < 0.001f && mx > 0.999f);
+        auto sw = run (2, 1.0f, 0.0f, 4.0f); check ("gate: saw down starts open and falls", sw[1] > 0.99f && sw[2000] < sw[100]);
+        int cross = 0; for (size_t i = 1; i < sq.size(); ++i) if (sq[i - 1] == 0.0f && sq[i] == 1.0f) ++cross; check ("gate: 4 Hz gives four openings per second", cross == 4 || cross == 3, "");
     }
     std::printf ("\n%d passed, %d failed\n", pass, fail); return fail ? 1 : 0;
 }

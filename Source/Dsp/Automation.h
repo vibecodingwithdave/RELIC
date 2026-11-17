@@ -20,7 +20,7 @@ enum AutoTarget
     AtNone = 0, AtCutoff, AtReso, AtPitch, AtPan, AtSynthPitch, AtGroupPitch, AtGroupDetune, AtSynthVol, AtSampleVol, AtSamplePitchA, AtSamplePitchB,
     AtTextureLevel, AtOscAPos, AtOscBPos, AtOscCPos, AtOscMix, AtMaster, AtReverbMix, AtReverbSize, AtDelayMix, AtChorusMix, AtFlangerMix,
     AtTremDepth, AtSatDrive, AtWahFreq, AtWidth, AtPitchDelayMix, AtLofiMix, AtSGateMix, AtTalkShape, AtCrushMix,
-    AtLane1Depth, AtLane2Depth, AtLane3Depth, AtLane4Depth, kAutoTargets
+    AtLane1Depth, AtLane2Depth, AtLane3Depth, AtLane4Depth, AtGateDepth, kAutoTargets
 };
 
 // How much one unit of (depth x output x intensity) moves each target, in the unit the engine applies it in. Only some are measured against the reference.
@@ -36,7 +36,7 @@ inline const AutoTargetInfo& autoTargetInfo (int t)
         { "Reverb Mix", 1.0f, false }, { "Reverb Size", 1.0f, false }, { "Delay Mix", 1.0f, false }, { "Chorus Mix", 1.0f, false }, { "Flanger Mix", 1.0f, false },
         { "Tremolo Depth", 1.0f, false }, { "Saturation Drive", 1.0f, false }, { "Wah Frequency", 1.0f, false }, { "Stereo Width", 1.0f, false },
         { "Pitch Delay Mix", 1.0f, false }, { "Lo-fi Mix", 1.0f, false }, { "Spectral Gate Mix", 1.0f, false }, { "Talk Shape", 1.0f, false },
-        { "Crush Mix", 1.0f, false }, { "Lane 1 Depth", 1.0f, false }, { "Lane 2 Depth", 1.0f, false }, { "Lane 3 Depth", 1.0f, false }, { "Lane 4 Depth", 1.0f, false } };
+        { "Crush Mix", 1.0f, false }, { "Lane 1 Depth", 1.0f, false }, { "Lane 2 Depth", 1.0f, false }, { "Lane 3 Depth", 1.0f, false }, { "Lane 4 Depth", 1.0f, false }, { "Gate Depth", 1.0f, false } };
     return info[t < 0 ? 0 : (t >= kAutoTargets ? 0 : t)];
 }
 inline bool autoIsDepthTarget (int t) { return t >= AtLane1Depth && t <= AtLane4Depth; }

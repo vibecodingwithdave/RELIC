@@ -1089,6 +1089,40 @@ private:
     juce::ComboBox type, band; juce::Label typeL, bandL; std::unique_ptr<juce::ComboBoxParameterAttachment> typeA, bandA; std::array<Row, 3> row;
 };
 
+// The rhythmic gate: on/off, its shape, how deep it closes, its speed (Hz or a tempo division) and how soft its edges are.
+class GatePanel : public juce::Component
+{
+public:
+    GatePanel (RelicProcessor& p)
+    {
+        auto lab = [&] (juce::Label& l, const char* t) { l.setText (t, juce::dontSendNotification); l.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0)); l.setFont (juce::FontOptions (12.5f)); addAndMakeVisible (l); };
+        on.setButtonText ("GATE ON"); addAndMakeVisible (on); onA = std::make_unique<juce::ButtonParameterAttachment> (*p.apvts.getParameter ("gate_on"), on); on.setTooltip (help::forId ("gate_on"));
+        for (int i = 0; i < 2; ++i)
+        {
+            const char* id = i == 0 ? "gate_shape" : "gate_sync"; auto* par = dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter (id));
+            combo[(size_t) i].addItemList (par->choices, 1); comboA[(size_t) i] = std::make_unique<juce::ComboBoxParameterAttachment> (*par, combo[(size_t) i]); combo[(size_t) i].setTooltip (help::forId (id)); addAndMakeVisible (combo[(size_t) i]);
+        }
+        static const struct { const char* id; const char* label; const char* suffix; int dp; } rows[3] = { { "gate_depth", "DEPTH", "", 2 }, { "gate_rate_hz", "RATE", " Hz", 2 }, { "gate_smooth", "SMOOTH", "", 2 } };
+        for (int i = 0; i < 3; ++i)
+        {
+            auto& s = slider[(size_t) i]; lab (name[(size_t) i], rows[i].label);
+            s.setSliderStyle (juce::Slider::LinearHorizontal); s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 20); s.setTextValueSuffix (rows[i].suffix); s.setNumDecimalPlacesToDisplay (rows[i].dp);
+            s.setTooltip (help::forId (rows[i].id)); sA[(size_t) i] = std::make_unique<juce::SliderParameterAttachment> (*p.apvts.getParameter (rows[i].id), s); addAndMakeVisible (s);
+        }
+        lab (shapeL, "SHAPE"); lab (syncL, "SYNC");
+        setSize (400, 5 * 32 + 16);
+    }
+    void paint (juce::Graphics& g) override { g.fillAll (juce::Colour (0xff17131c)); }
+    void resized() override
+    {
+        on.setBounds (14, 10, 120, 24); shapeL.setBounds (14, 42, 84, 24); combo[0].setBounds (100, 42, getWidth() - 114, 24); syncL.setBounds (14, 74, 84, 24); combo[1].setBounds (100, 74, getWidth() - 114, 24);
+        for (int i = 0; i < 3; ++i) { name[(size_t) i].setBounds (14, 106 + i * 32, 84, 24); slider[(size_t) i].setBounds (100, 106 + i * 32, getWidth() - 112, 24); }
+    }
+private:
+    juce::ToggleButton on; std::unique_ptr<juce::ButtonParameterAttachment> onA; std::array<juce::ComboBox, 2> combo; std::array<std::unique_ptr<juce::ComboBoxParameterAttachment>, 2> comboA;
+    std::array<juce::Slider, 3> slider; std::array<std::unique_ptr<juce::SliderParameterAttachment>, 3> sA; std::array<juce::Label, 3> name; juce::Label shapeL, syncL;
+};
+
 // A modulation slot's response drawn by hand: nine points, drag across the graph to paint them. The horizontal axis is how far the source is from zero (0 to 1), the vertical
 // axis how much of it passes (0 to 1); a negative source keeps its sign.
 class CurveGraph : public juce::Component
@@ -1750,7 +1784,7 @@ private:
     struct Pad { std::unique_ptr<ui::StoneButton> btn; std::unique_ptr<juce::ButtonParameterAttachment> att; const char* id; };
     std::vector<Pad> pads;
     std::unique_ptr<ui::StoneButton> waveLeft, waveRight, waveName, polyBtn, allOn, bypassFx;
-    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn, vibEnvBtn, wtOscBtn, tapeShapeBtn, autoBtn; std::array<std::unique_ptr<ui::StoneButton>, 2> lfoDrawBtn; int wtOsc = 0;      // wavetable file strip on the OSC tab
+    std::unique_ptr<ui::StoneButton> wtPrev, wtNext, wtName, wtLoad, kitBtn, vibEnvBtn, wtOscBtn, tapeShapeBtn, autoBtn, gateBtn; std::array<std::unique_ptr<ui::StoneButton>, 2> lfoDrawBtn; int wtOsc = 0;      // wavetable file strip on the OSC tab
     struct SyncChip { std::unique_ptr<ui::StoneButton> btn; juce::String knobId, syncId; };
     std::vector<SyncChip> syncChips; void updateSyncChips();        // a small note-value button on each rate / time knob that can follow the host tempo
     void updateWtStrip(); void showWavetableMenu(); void loadWavetableDialog(); void afterWavetableLoaded();

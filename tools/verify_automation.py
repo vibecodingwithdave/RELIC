@@ -15,7 +15,7 @@ SHAPE = dict(draw=0, sine=1, tri=2, saw=3, square=4, sh=5, env=6)
 DIV = {'1bar': 0, '1/2': 1, '1/4': 2, '1/8': 3, '1/16': 4, '2bar': 5, '4bar': 6, 'free': 7}
 TG = ['None', 'Cutoff', 'Resonance', 'Pitch', 'Pan', 'Synth Pitch', 'Group Pitch', 'Group Detune', 'Synth Volume', 'Sample Volume', 'Sample A Pitch', 'Sample B Pitch', 'Texture Level', 'Osc A Position',
       'Osc B Position', 'Osc C Position', 'Osc/Sample Mix', 'Master Volume', 'Reverb Mix', 'Reverb Size', 'Delay Mix', 'Chorus Mix', 'Flanger Mix', 'Tremolo Depth', 'Saturation Drive', 'Wah Frequency',
-      'Stereo Width', 'Pitch Delay Mix', 'Lo-fi Mix', 'Spectral Gate Mix', 'Talk Shape', 'Crush Mix', 'Lane 1 Depth', 'Lane 2 Depth', 'Lane 3 Depth', 'Lane 4 Depth']
+      'Stereo Width', 'Pitch Delay Mix', 'Lo-fi Mix', 'Spectral Gate Mix', 'Talk Shape', 'Crush Mix', 'Lane 1 Depth', 'Lane 2 Depth', 'Lane 3 Depth', 'Lane 4 Depth', 'Gate Depth']
 def flat(v): return {f'w{k}': (1.0 if v > 0 else 0.0) for k in range(1, 33)}
 def lane(n, shape='draw', dst='Pitch', depth=0.25, sign=1, div='free', hz=1.0, feel=0, on=1, trig=0, **kw):
     d = {f'auto{n}_on': on, f'auto{n}_src': SHAPE[shape], f'auto{n}_depth': depth, f'auto{n}_dst': TG.index(dst), f'auto{n}_div': DIV[div], f'auto{n}_hz': hz, f'auto{n}_feel': feel, f'auto{n}_trig': trig}
@@ -97,6 +97,7 @@ FX = {'Reverb Mix': dict(reverb_on=1, reverb_mix=0.0), 'Reverb Size': dict(rever
       'Chorus Mix': dict(chorus_on=1, chorus_mix=0.0), 'Flanger Mix': dict(flanger_on=1, flanger_mix=0.0), 'Tremolo Depth': dict(trem_on=1, trem_depth=0.0, trem_rate_hz=6.0),
       'Saturation Drive': dict(tape_on=1, tape_drive=0.0), 'Wah Frequency': dict(wah_on=1, wah_mix=1.0, wah_depth=0.0), 'Stereo Width': dict(widener_on=1, widener_width=0.0, unison_voices=3, unison_spread=1.0),
       'Pitch Delay Mix': dict(pdelay_on=1, pdelay_mix=0.0), 'Lo-fi Mix': dict(lofi_on=1, lofi_mix=0.0, lofi_noise=0.8, lofi_tone_hz=2000.0), 'Spectral Gate Mix': dict(sgate_on=1, sgate_mix=0.0, sgate_threshold_db=-6.0, sgate_depth=1.0, osc_level=0.15),
+      'Gate Depth': dict(gate_on=1, gate_depth=0.0, gate_shape=0, gate_rate_hz=5.0, gate_smooth=0.0),
       'Talk Shape': dict(talk_on=1, talk_mix=1.0, talk_vowel=0.0), 'Crush Mix': dict(crush_on=1, crush_mix=0.0, crush_bits=4)}
 for tg, base in FX.items():
     B = {**SYN, **base}
@@ -142,6 +143,16 @@ check('a bit with amount 0 does nothing', np.allclose(y2, off, atol=1e-6) and no
 y3 = render(plugin({**FO, **fan({3}), 'llfo_on': 0}), ch=True); check('fan-out off: no effect even with bits set', np.array_equal(y3, off))
 ym = render(plugin({**SM, **fan({11}), 'synth_mix': 0.0, 'llfo_depth': 0.8}, wav=SINE)); check('fan-out bit 10 (osc/sample mix) moves the mix', np.isfinite(ym).all() and abs(rms(ym) / rms(m0) - 1.0) > 0.05)
 
+# ---- the gate effect itself
+G = dict(SYN, gate_on=1, gate_depth=1.0, gate_shape=0, gate_rate_hz=4.0, gate_smooth=0.0, release_ms=20)
+yg = render(plugin(G)); ref = render(plugin({**SYN, 'release_ms': 20}))
+seg = np.abs(yg[int(0.5 * SR):int(1.5 * SR)]); frac_shut = float(np.mean(seg < 0.02 * np.abs(ref).max()))
+check('gate: a 4 Hz square gate at depth 1 is shut about half the time', 0.4 < frac_shut < 0.6, f'({frac_shut:.2f})')
+check('gate: off, the sound is unchanged', np.array_equal(render(plugin({**G, 'gate_on': 0})), ref))
+yl = render(plugin({**G, 'gate_depth': 0.0, **lane(1, 'draw', 'Gate Depth', 1.0, +1)})); check('a lane on Gate Depth closes a gate that was open (depth 0 -> 1)', float(np.mean(np.abs(yl[int(0.5 * SR):int(1.5 * SR)]) < 0.02 * np.abs(ref).max())) > 0.4)
+yb = render(plugin({**G, 'gate_sync': 3, 'gate_rate_hz': 0.2}))
+check('gate: tempo sync overrides the Hz rate', float(np.mean(np.abs(yb[int(0.5 * SR):int(1.5 * SR)]) < 0.02 * np.abs(ref).max())) > 0.3)
+
 # ---- state round trip
 S = {**FO, **fan({3, 11}, 1, 0.6), **lane(1, 'tri', 'Delay Mix', 0.7, 0, '1/8', feel=2, phase=0.25), **lane(2, 'env', 'Pitch', 0.1, 0, 'free', 0.5, trig=1, env_a_ms=40.0, env_d_ms=900.0), 'mod_heat': 0.6,
      **lane(3, 'draw', 'Lane 1 Depth', 0.0, +1)}
@@ -154,7 +165,7 @@ Pc = load_plugin(PATH); Pc.raw_state = Pb.raw_state; check('a second round trip 
 
 # ---- safety: every target, hard drive
 sf = True
-for tg in TG[1:32]:
+for tg in TG[1:32] + ['Gate Depth']:
     y = render(plugin({**FO, 'delay_feedback': 0.7, **{k: v for n, t in enumerate((tg, tg, tg), 1) for k, v in lane(n, 'square', t, 1.0, 0, 'free', 7.0 + n).items()}}), dur=1.8, hold=1.4, ch=True)
     sf &= bool(np.isfinite(y).all() and np.abs(y).max() <= 1.0)
 check('every target driven at full depth by square lanes stays finite and below full scale', sf)

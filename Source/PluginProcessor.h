@@ -166,7 +166,7 @@ private:
     void rebuildWavetable();
     rf::WaveTables tables;
     rf::Tremolo trem; rf::Panner panner; rf::PingPongDelay delay; rf::Compressor comp; rf::Crusher crush; rf::Chorus chorus; rf::Flanger flanger; rf::Reverb reverb;
-    rf::Equalizer eq; rf::Tape tape; rf::Widener widener; rf::Wah wah; rf::LoFi lofi; rf::Ott ott; rf::PitchDelay pdelay; rf::TalkBox talk; rf::SpectralGate sgate; std::vector<int> leadHeld;
+    rf::Equalizer eq; rf::Tape tape; rf::Widener widener; rf::Wah wah; rf::LoFi lofi; rf::Ott ott; rf::PitchDelay pdelay; rf::TalkBox talk; rf::SpectralGate sgate; rf::RhythmGate gate; std::vector<int> leadHeld;
 
     rf::ModLfo lfo[2], vibLfo; int lastNote = -1; double hostBpm = 120.0;
     std::atomic<float> modWheel { 0.0f }, pitchBend { 0.0f };

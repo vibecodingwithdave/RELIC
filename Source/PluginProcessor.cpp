@@ -84,6 +84,12 @@ APVTS::ParameterLayout RelicProcessor::createLayout()
     flt ("talk_depth", "Talk Depth", 0.0f, 1.0f, 0.5f);
     flt ("talk_mix", "Talk Mix", 0.0f, 1.0f, 1.0f);
     // Spectral gate
+    toggle ("gate_on", "Gate On", false);
+    flt ("gate_depth", "Gate Depth", 0.0f, 1.0f, 0.8f);
+    choice ("gate_shape", "Gate Shape", { "Square", "Sine", "Saw Down" }, 0);
+    flt ("gate_rate_hz", "Gate Rate Hz", 0.1f, 20.0f, 4.0f, 0.5f);
+    choice ("gate_sync", "Gate Sync", syncNames(), 0);
+    flt ("gate_smooth", "Gate Smooth", 0.0f, 1.0f, 0.2f);
     toggle ("sgate_on", "Spectral Gate On", false);
     flt ("sgate_threshold_db", "Spectral Gate Threshold Db", -80.0f, -10.0f, -40.0f);
     flt ("sgate_depth", "Spectral Gate Depth", 0.0f, 1.0f, 1.0f);
@@ -542,7 +548,7 @@ static void installFactoryPresets()
 PresetPart presetPartOfParam (const juce::String& id)
 {
     auto starts = [&] (const char* pre) { return id.startsWith (pre); };
-    for (auto* pre : { "trem_", "delay_", "comp_", "crush_", "pan_", "chorus_", "flanger_", "reverb_", "eq_", "tape_", "widener_", "wah_", "lofi_", "ott_", "pdelay_", "talk_", "sgate_" }) if (starts (pre)) return PresetPart::Effects;
+    for (auto* pre : { "trem_", "delay_", "comp_", "crush_", "pan_", "chorus_", "flanger_", "reverb_", "eq_", "tape_", "widener_", "wah_", "lofi_", "ott_", "pdelay_", "talk_", "sgate_", "gate_" }) if (starts (pre)) return PresetPart::Effects;
     for (auto* pre : { "lfo1_", "lfo2_", "menv1_", "menv2_", "mod", "auto", "llfo_", "macro_", "xy_" }) if (starts (pre)) return PresetPart::Mod;
     for (auto* pre : { "sample_", "sampleb_", "loop_", "tex_", "chop_", "split_" }) if (starts (pre)) return PresetPart::Sample;
     for (auto* pre : { "arp_", "chord_", "voice_lead" }) if (starts (pre)) return PresetPart::Notes;
@@ -727,7 +733,7 @@ void RelicProcessor::prepareToPlay (double sampleRate, int)
     tables.prepare (sr);
     rebuildWavetable();
     delay.prepare (sr); chorus.prepare (sr); flanger.prepare (sr); reverb.prepare (sr);
-    pdelay.prepare (sr); talk.prepare (sr); sgate.prepare (sr); eq.prepare (sr); tape.prepare (sr); wah.prepare (sr); lofi.prepare (sr); ott.prepare (sr); leadHeld.reserve (64);
+    pdelay.prepare (sr); talk.prepare (sr); sgate.prepare (sr); gate.prepare (sr); eq.prepare (sr); tape.prepare (sr); wah.prepare (sr); lofi.prepare (sr); ott.prepare (sr); leadHeld.reserve (64);
     autoBank.prepare();
     for (auto& vo : voices) vo = Voice();
     sampleCounter = 0; outEvts.clear(); engine.reset (0, outEvts); outEvts.clear(); inEvts.reserve (256); outEvts.reserve (512);
@@ -1383,7 +1389,7 @@ void RelicProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
 
     auto on = [this] (const char* id) { return p (id)->load() > 0.5f; };
     const bool cOn = on ("crush_on"), pOn = on ("pan_on"), tOn = on ("trem_on"), kOn = on ("comp_on"), dOn = on ("delay_on"), chOn = on ("chorus_on"), flOn = on ("flanger_on"), rvOn = on ("reverb_on"),
-               eqOn = on ("eq_on"), tpOn = on ("tape_on"), wdOn = on ("widener_on"), whOn = on ("wah_on"), lfOn = on ("lofi_on"), otOn = on ("ott_on"), pdOn = on ("pdelay_on"), tkOn = on ("talk_on"), sgOn = on ("sgate_on");
+               eqOn = on ("eq_on"), tpOn = on ("tape_on"), wdOn = on ("widener_on"), whOn = on ("wah_on"), lfOn = on ("lofi_on"), otOn = on ("ott_on"), pdOn = on ("pdelay_on"), tkOn = on ("talk_on"), sgOn = on ("sgate_on"), gtOn = on ("gate_on");
     rf::Tape::Opts tapeOpts; tapeOpts.type = (int) p ("tape_type")->load(); tapeOpts.bias = p ("tape_bias")->load(); tapeOpts.mix = p ("tape_mix")->load(); tapeOpts.band = (int) p ("tape_band")->load();
     tapeOpts.loHz = p ("tape_lo_hz")->load(); tapeOpts.hiHz = p ("tape_hi_hz")->load();
     const float master = p ("master")->load();
@@ -1419,6 +1425,7 @@ void RelicProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         if (kOn) comp.process (l, r, p ("comp_threshold_db")->load(), p ("comp_ratio")->load(), p ("comp_attack_ms")->load(),
                                p ("comp_release_ms")->load(), p ("comp_makeup_db")->load(), sr);
         if (otOn) ott.process (l, r, p ("ott_depth")->load(), p ("ott_time")->load(), p ("ott_mix")->load(), sr);
+        if (gtOn) gate.process (l, r, (float) rf::syncedHz ((int) p ("gate_sync")->load(), hostBpm, p ("gate_rate_hz")->load()), fxm ("gate_depth", rf::AtGateDepth, 0.0f, 1.0f), (int) p ("gate_shape")->load(), p ("gate_smooth")->load(), sr);
         if (sgOn) sgate.process (l, r, p ("sgate_threshold_db")->load(), p ("sgate_depth")->load(), p ("sgate_release_ms")->load(), fxm ("sgate_mix", rf::AtSGateMix, 0.0f, 1.0f), sr);
         if (chOn) chorus.process (l, r, rf::syncedHz ((int) p ("chorus_sync")->load(), hostBpm, p ("chorus_rate_hz")->load()), p ("chorus_depth")->load(), fxm ("chorus_mix", rf::AtChorusMix, 0.0f, 1.0f), sr);
         if (flOn) flanger.process (l, r, rf::syncedHz ((int) p ("flanger_sync")->load(), hostBpm, p ("flanger_rate_hz")->load()), p ("flanger_depth")->load(), p ("flanger_feedback")->load(), fxm ("flanger_mix", rf::AtFlangerMix, 0.0f, 1.0f), sr);
@@ -1550,7 +1557,7 @@ bool RelicProcessor::redo()
 
 static bool isEffectId (const juce::String& id)
 {
-    static const char* fx[] = { "trem_", "delay_", "comp_", "crush_", "pan_", "chorus_", "flanger_", "reverb_", "eq_", "tape_", "widener_", "wah_", "lofi_", "ott_", "pdelay_", "talk_", "sgate_" };
+    static const char* fx[] = { "trem_", "delay_", "comp_", "crush_", "pan_", "chorus_", "flanger_", "reverb_", "eq_", "tape_", "widener_", "wah_", "lofi_", "ott_", "pdelay_", "talk_", "sgate_", "gate_" };
     for (auto k : fx) if (id.startsWith (k)) return true;
     return false;
 }
@@ -1614,7 +1621,7 @@ void RelicProcessor::craftSound()
     // effects: a little space and warmth only. Everything off first, then one or two musical ones, with tuned settings.
     if (! lockFx.load())
     {
-        for (auto id : { "trem_on", "delay_on", "comp_on", "crush_on", "pan_on", "chorus_on", "flanger_on", "reverb_on", "eq_on", "tape_on", "widener_on", "wah_on", "lofi_on", "ott_on", "pdelay_on", "talk_on", "sgate_on" }) put (id, 0.0f);
+        for (auto id : { "trem_on", "delay_on", "comp_on", "crush_on", "pan_on", "chorus_on", "flanger_on", "reverb_on", "eq_on", "tape_on", "widener_on", "wah_on", "lofi_on", "ott_on", "pdelay_on", "talk_on", "sgate_on", "gate_on" }) put (id, 0.0f);
         put ("delay_mode", 0.0f);
         const bool wantReverb = style == 0 || rng.nextFloat() < 0.65f, wantDelay = style != 0 && rng.nextFloat() < 0.5f, wantChorus = (style == 0 || style == 4) && rng.nextFloat() < 0.6f, wantTape = rng.nextFloat() < 0.25f;
         if (wantReverb) { put ("reverb_on", 1.0f); put ("reverb_size", uni (0.35f, 0.75f)); put ("reverb_damp", uni (0.3f, 0.65f)); put ("reverb_predelay_ms", uni (5, 25)); put ("reverb_mix", style == 0 ? uni (0.22f, 0.38f) : uni (0.1f, 0.24f)); }
@@ -1629,7 +1636,7 @@ void RelicProcessor::randomizeSound (bool chaos)
 {
     flushPending();
     if (! chaos) { craftSound(); return; }
-    static const char* fxPrefix[] = { "trem_", "delay_", "comp_", "crush_", "pan_", "chorus_", "flanger_", "reverb_", "eq_", "tape_", "widener_", "wah_", "lofi_", "ott_", "pdelay_", "talk_", "sgate_" };
+    static const char* fxPrefix[] = { "trem_", "delay_", "comp_", "crush_", "pan_", "chorus_", "flanger_", "reverb_", "eq_", "tape_", "widener_", "wah_", "lofi_", "ott_", "pdelay_", "talk_", "sgate_", "gate_" };
     static const char* kept[] = { "master", "voices", "synth_mix", "sample_", "loop_", "tex_", "chop_", "chord_", "arp_", "lead_on", "porta_", "vib_", "auto", "llfo_", "mod_heat" };
     auto starts = [] (const juce::String& id, const char* pre) { return id.startsWith (pre); };
     auto uni = [&] (float a, float b) { return a + (b - a) * rng.nextFloat(); };

@@ -129,7 +129,7 @@ void RelicEditor::setAllEffects (bool on)
 {
     for (auto id : { "trem_on", "delay_on", "comp_on", "crush_on", "pan_on", "chorus_on", "flanger_on", "reverb_on", "eq_on", "tape_on", "widener_on", "wah_on", "lofi_on", "ott_on" })
         if (auto* p = proc.apvts.getParameter (id)) { p->beginChangeGesture(); p->setValueNotifyingHost (on ? 1.0f : 0.0f); p->endChangeGesture(); }
-    if (! on) for (auto id : { "pdelay_on", "talk_on", "sgate_on" })        // the creative ones are only ever switched off by ALL ON / BYPASS
+    if (! on) for (auto id : { "pdelay_on", "talk_on", "sgate_on", "gate_on" })        // the creative ones are only ever switched off by ALL ON / BYPASS
         if (auto* p = proc.apvts.getParameter (id)) { p->beginChangeGesture(); p->setValueNotifyingHost (0.0f); p->endChangeGesture(); }
 }
 
@@ -377,6 +377,8 @@ RelicEditor::RelicEditor (RelicProcessor& p)
                     { "pdelay_time_ms", "Time" }, { "pdelay_feedback", "Fdbk" }, { "pdelay_semi", "Pitch" }, { "pdelay_mix", "Mix" } })
         fx4Group.push_back (addKnob (k.first, k.second));
     for (auto id : { "talk_on", "sgate_on", "pdelay_on" }) fx4Group.push_back (addNoteToggle (id, "ON", 0.45f));
+    gateBtn = std::make_unique<ui::StoneButton> ("GATE...", true, false); gateBtn->textScale = 0.4f; gateBtn->setTooltip (help::forId ("gate_on")); addAndMakeVisible (*gateBtn); fx4Group.push_back (gateBtn.get());
+    gateBtn->onClick = [this] { juce::CallOutBox::launchAsynchronously (std::make_unique<ui::GatePanel> (proc), gateBtn->getScreenBounds(), nullptr); };
 
     // ---- TEXTURE tab (opened from the Textures icon in the sidebar) ----
     for (auto k : { std::make_pair ("tex_level", "Level"), { "tex_pos", "Position" }, { "tex_spread", "Spread" }, { "tex_size_ms", "Grain" }, { "tex_density", "Density" }, { "tex_jitter_ct", "Jitter" } })
@@ -895,6 +897,8 @@ void RelicEditor::resized()
             for (int k = 0; k < 5; ++k) if (ids[pnl][k]) K (ids[pnl][k])->setBounds (R (x0 + 8 + (k % 3) * 74.0f, rowY ((n + 2) / 3, k / 3), 72, 120));
         }
     }
+
+    gateBtn->setBounds (R (556 + 3 * 241.0f + 12, 208, 118, 32));       // the fourth effect of the FX 4 tab: its settings open in a popup
 
     // XY overlay over the picture
     xyPad->setBounds (R (124, 112, 384, 426)); K ("macro_1")->setBounds (R (168, 412, 120, 120)); K ("macro_2")->setBounds (R (346, 412, 120, 120));

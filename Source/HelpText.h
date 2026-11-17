@@ -27,6 +27,11 @@ inline juce::String familyKey (juce::String id)
 inline const Table& params()
 {
     static const Table t = {
+        { "gate_on", "Rhythmic gate: chops the sound into a repeating pattern. GATE... opens its settings." },
+        { "gate_depth", "How far the gate closes (0 = never, 1 = fully shut). An automation lane can move it." },
+        { "gate_shape", "The pattern: Square (open then shut), Sine (smooth swell) or Saw Down (opens then fades)." },
+        { "gate_rate_hz", "How fast the gate cycles, in Hz (when Sync is Free)." }, { "gate_sync", "Lock the gate to the host tempo." },
+        { "gate_smooth", "How softly the gate opens and closes: 0 is a hard click-free edge, 1 a slow swell." },
         // automation lanes
         { "mod_heat", "Modulation intensity: scales every automation lane at once (0 = none, 1 = full). The fan-out LFO is not affected." },
         { "auto1_on", "Switch this automation lane on. Each lane is its own generator with its own shape, speed, depth and one target." },
