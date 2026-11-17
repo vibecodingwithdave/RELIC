@@ -519,6 +519,18 @@ juce::File RelicProcessor::presetsRoot()
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Relic").getChildFile ("Presets");
 }
 
+// A preset file may name its audio files as "{RELIC_LIBRARY}/folder/file.wav"; that stands for the Library folder next to the Presets folder, so a sound pack can be installed anywhere a user's data folder is.
+static void expandLibraryTokens (juce::XmlElement& xml)
+{
+    static const juce::String token ("{RELIC_LIBRARY}");
+    const auto root = RelicProcessor::presetsRoot().getParentDirectory().getChildFile ("Library").getFullPathName();
+    for (auto* k : { "samplePath", "samplePathB", "samplePathT", "wavetablePath", "wavetablePath2", "wavetablePath3" })
+    {
+        auto v = xml.getStringAttribute (k);
+        if (v.startsWith (token)) xml.setAttribute (k, root + juce::File::getSeparatorString() + v.fromFirstOccurrenceOf (token, false, false).trimCharactersAtStart ("/\\").replace ("/", juce::File::getSeparatorString()));
+    }
+}
+
 static void installFactoryPresets()
 {
     // The stamp follows the bundled presets' contents, so adding or editing a factory preset reinstalls them.
@@ -636,6 +648,7 @@ bool RelicProcessor::loadPresetFile (const juce::File& f)
 {
     auto xml = juce::XmlDocument::parse (f);
     if (xml == nullptr || ! xml->hasTagName ("STATE")) return false;
+    expandLibraryTokens (*xml);
     if (presetPartNames().indexOf (xml->getStringAttribute ("partType")) <= 0) migrateWavetableState (*xml);
     const int part = presetPartNames().indexOf (xml->getStringAttribute ("partType"));      // -1 / 0: a full preset (also every file from before partial presets)
     if (part > 0) return loadPresetPart (*xml, (PresetPart) part);
