@@ -927,6 +927,8 @@ void RelicProcessor::noteOff (int note)
     bool anyChop = false;
     for (auto& vo : voices) if (vo.active && vo.chop && vo.note == note) { anyChop = true; if (vo.env.stage != rf::Adsr::Release) vo.env.noteOff(); }
     if (anyChop) return;
+    // Lead mode only sounds voice 0, but a note pressed before Lead was switched on (a preset change, say) may sit on another voice: that one must still be released.
+    for (int i = 1; i < MaxVoices; ++i) { auto& vo = voices[i]; if (vo.active && ! vo.chop && vo.note == note && vo.env.stage != rf::Adsr::Release) vo.env.noteOff(); }
     if (p ("lead_on")->load() > 0.5f)
     {
         leadHeld.erase (std::remove (leadHeld.begin(), leadHeld.end(), note), leadHeld.end());
